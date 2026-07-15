@@ -1,0 +1,142 @@
+[workspace]
+members = [".", "packages/bedrock-sdk", "packages/vertex-sdk", "packages/foundry-sdk"]
+resolver = "2"
+
+[package]
+name = "anthropic-sdk"
+version = "0.74.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Unofficial Rust client for the Anthropic API, aligned with @anthropic-ai/sdk v0.74.0"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/Haleclipse/anthropic-sdk-rs"
+homepage = "https://github.com/Haleclipse/anthropic-sdk-rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
+# TLS backend is target-specific (see below). Shared features only.
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+futures = "0.3"
+thiserror = "2"
+bytes = "1"
+pin-project-lite = "0.2"
+async-trait = "0.1"
+tracing = "0.1"
+url = "2"
+http = "1"
+httpdate = "1"
+rand = "0.10"
+schemars = "1"
+
+# Android/Termux: OpenSSL (native-tls).
+# Desktop: rustls WITHOUT a crypto provider (rustls-no-provider) so the
+# binary can install ring (or another provider) once. Avoids Cargo feature
+# union pulling BOTH ring and aws-lc-sys when the host app already depends
+# on rustls+ring (Cometix: CryptoProvider::install_default in main.rs).
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart", "native-tls"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart", "rustls-no-provider"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+wiremock = "0.6"
+pretty_assertions = "1"
+
+# ── Examples ─────────────────────────────────────────────────────────────
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[example]]
+name = "streaming"
+path = "examples/streaming.rs"
+
+[[example]]
+name = "raw_streaming"
+path = "examples/raw_streaming.rs"
+
+[[example]]
+name = "tools"
+path = "examples/tools.rs"
+
+[[example]]
+name = "thinking"
+path = "examples/thinking.rs"
+
+[[example]]
+name = "count_tokens"
+path = "examples/count_tokens.rs"
+
+[[example]]
+name = "cancellation"
+path = "examples/cancellation.rs"
+
+[[example]]
+name = "tools_streaming"
+path = "examples/tools_streaming.rs"
+
+[[example]]
+name = "tools_helpers_advanced"
+path = "examples/tools_helpers_advanced.rs"
+
+[[example]]
+name = "tools_helpers_advanced_streaming"
+path = "examples/tools_helpers_advanced_streaming.rs"
+
+[[example]]
+name = "tools_helpers_json_schema"
+path = "examples/tools_helpers_json_schema.rs"
+
+[[example]]
+name = "batch_results"
+path = "examples/batch_results.rs"
+
+[[example]]
+name = "mcp"
+path = "examples/mcp.rs"
+
+[[example]]
+name = "auto_compaction"
+path = "examples/auto_compaction.rs"
+
+[[example]]
+name = "tools_helpers_schemars"
+path = "examples/tools_helpers_schemars.rs"
+
+[[example]]
+name = "tools_helpers_memory"
+path = "examples/tools_helpers_memory.rs"
+
+[[example]]
+name = "structured_outputs_raw"
+path = "examples/structured_outputs_raw.rs"
+
+[[example]]
+name = "structured_outputs_json_schema"
+path = "examples/structured_outputs_json_schema.rs"
+
+[[example]]
+name = "structured_outputs_streaming"
+path = "examples/structured_outputs_streaming.rs"
+
+[[example]]
+name = "structured_outputs_schemars"
+path = "examples/structured_outputs_schemars.rs"
+
+[[example]]
+name = "web_search"
+path = "examples/web_search.rs"
+
+[[example]]
+name = "web_search_stream"
+path = "examples/web_search_stream.rs"
+
+[[example]]
+name = "thinking_stream"
+path = "examples/thinking_stream.rs"

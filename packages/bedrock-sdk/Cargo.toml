@@ -1,0 +1,31 @@
+[package]
+name = "anthropic-sdk-bedrock"
+version = "0.26.3"
+edition = "2021"
+description = "Amazon Bedrock provider for anthropic-sdk"
+license = "MIT"
+repository = "https://github.com/Haleclipse/anthropic-sdk-rs"
+
+[dependencies]
+anthropic-sdk = { path = "../.." }
+reqwest = { version = "0.13", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros"] }
+futures = "0.3"
+bytes = "1"
+pin-project-lite = "0.2"
+base64 = "0.22"
+hex = "0.4"
+hmac = "0.12"
+sha2 = "0.10"
+crc32fast = "1"
+time = { version = "0.3", features = ["formatting"] }
+url = "2"
+aws-config = "1.8.16"
+aws-credential-types = "1.2.14"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+pretty_assertions = "1"
+wiremock = "0.6"

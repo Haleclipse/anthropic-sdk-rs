@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.rlib
+*.rmeta
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local coverage/profiling output
+coverage/
+*.profraw
+*.profdata
+lcov.info

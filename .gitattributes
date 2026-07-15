@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# SSE fixtures intentionally retain terminating blank event separators.
+tests/fixtures/** -whitespace

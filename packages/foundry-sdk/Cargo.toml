@@ -1,0 +1,20 @@
+[package]
+name = "anthropic-sdk-foundry"
+version = "0.2.3"
+edition = "2021"
+description = "Azure AI Foundry provider for anthropic-sdk"
+license = "MIT"
+repository = "https://github.com/Haleclipse/anthropic-sdk-rs"
+
+[dependencies]
+anthropic-sdk = { path = "../.." }
+reqwest = { version = "0.13", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros"] }
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+pretty_assertions = "1"
+wiremock = "0.6"
