@@ -7,14 +7,36 @@
 //! Rust does not expose Deno/browser environments, so this helper maps to
 //! `std::env::var`, trims the value, and returns `None` for missing or invalid
 //! environment values.
+//!
+//! `readEnv()` reads the host's live `process.env`. A Rust host that keeps its
+//! effective environment in-process — rather than mutating the real one, which
+//! is unsound once other threads may read it — installs that reader once with
+//! [`set_env_source`]; every SDK environment fallback then observes it.
+
+use std::sync::OnceLock;
+
+/// A host environment reader: the untrimmed value, or `None` when absent.
+pub type EnvSource = fn(&str) -> Option<String>;
+
+static ENV_SOURCE: OnceLock<EnvSource> = OnceLock::new();
+
+/// Install the process-wide environment reader used by [`read_env`].
+///
+/// Only the first installation takes effect; later calls return their reader
+/// back as `Err`. Without one, [`read_env`] reads the real environment.
+pub fn set_env_source(source: EnvSource) -> Result<(), EnvSource> {
+    ENV_SOURCE.set(source)
+}
 
 /// Read and trim an environment variable.
 ///
 /// Maps to TS `readEnv(env)`.
 pub fn read_env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_owned())
+    match ENV_SOURCE.get() {
+        Some(source) => source(name),
+        None => std::env::var(name).ok(),
+    }
+    .map(|value| value.trim().to_owned())
 }
 
 /// TS-style camelCase alias for [`read_env`].
