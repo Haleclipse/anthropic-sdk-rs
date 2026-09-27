@@ -12,6 +12,7 @@ use anthropic_sdk::client::{Anthropic, AuthTokenProvider, ClientOptions as CoreC
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::ApiResponse;
 use anthropic_sdk::core::streaming::SseStream;
+use anthropic_sdk::internal::env::read_env;
 use anthropic_sdk::resources::beta::messages::{
     BetaMessage, BetaMessageCountTokensParams, BetaMessageCreateParams, BetaMessageStreamEvent,
     BetaMessageTokensCount,
@@ -137,20 +138,12 @@ impl FoundryConfig {
     ///
     /// Returns `Err` when neither `resource` nor `base_url` is present.
     pub fn from_env() -> Result<Self, ApiError> {
-        let resource = std::env::var("ANTHROPIC_FOUNDRY_RESOURCE")
-            .ok()
-            .map(|value| value.trim().to_owned())
+        let resource = read_env("ANTHROPIC_FOUNDRY_RESOURCE")
             .filter(|value| !value.is_empty())
             .unwrap_or_default();
 
-        let api_key = std::env::var("ANTHROPIC_FOUNDRY_API_KEY")
-            .ok()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty());
-        let base_url = std::env::var("ANTHROPIC_FOUNDRY_BASE_URL")
-            .ok()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty());
+        let api_key = read_env("ANTHROPIC_FOUNDRY_API_KEY").filter(|value| !value.is_empty());
+        let base_url = read_env("ANTHROPIC_FOUNDRY_BASE_URL").filter(|value| !value.is_empty());
 
         let config = Self {
             resource,

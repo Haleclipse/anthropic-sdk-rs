@@ -14,6 +14,7 @@ use anthropic_sdk::client::{Anthropic, AuthTokenProvider, ClientOptions as CoreC
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
 use anthropic_sdk::core::streaming::SseStream;
+use anthropic_sdk::internal::env::read_env;
 use anthropic_sdk::resources::beta::messages::{
     BetaMessage, BetaMessageCountTokensParams, BetaMessageCreateParams, BetaMessageStreamEvent,
     BetaMessageTokensCount,
@@ -144,22 +145,15 @@ impl VertexConfig {
     /// value is present. Runtime token providers can still resolve project ids
     /// through [`TokenProvider::project_id`] when constructing clients manually.
     pub fn from_env() -> Result<Self, ApiError> {
-        let region = std::env::var("CLOUD_ML_REGION")
-            .ok()
-            .map(|value| value.trim().to_owned())
+        let region = read_env("CLOUD_ML_REGION")
             .filter(|value| !value.is_empty())
             .ok_or_else(vertex_missing_region_error)?;
 
-        let project_id = std::env::var("ANTHROPIC_VERTEX_PROJECT_ID")
-            .ok()
-            .map(|value| value.trim().to_owned())
+        let project_id = read_env("ANTHROPIC_VERTEX_PROJECT_ID")
             .filter(|value| !value.is_empty())
             .ok_or_else(vertex_missing_project_id_error)?;
 
-        let base_url = std::env::var("ANTHROPIC_VERTEX_BASE_URL")
-            .ok()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty());
+        let base_url = read_env("ANTHROPIC_VERTEX_BASE_URL").filter(|value| !value.is_empty());
 
         Ok(Self {
             project_id,
