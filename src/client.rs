@@ -15,6 +15,7 @@ use serde_json::{Map as JsonMap, Value as JsonValue};
 use crate::core::error::ApiError;
 use crate::core::response::{ApiResponse, RawResponse};
 use crate::internal::detect_platform::get_platform_headers;
+use crate::internal::env::read_env;
 use crate::internal::log::format_request_details;
 use crate::internal::query::{stringify_query, QueryValue};
 use crate::internal::request_options::{
@@ -357,41 +358,38 @@ impl Anthropic {
     /// Creates a new client. Fields not set in `opts` fall back to environment
     /// variables and then to compiled-in defaults.
     pub fn new(opts: ClientOptions) -> Result<Self, ApiError> {
-        let api_key = opts.api_key.clone().or_else(|| {
-            std::env::var("ANTHROPIC_API_KEY")
-                .ok()
-                .map(|s| s.trim().to_owned())
-                .filter(|s| !s.is_empty())
-        });
+        // TS `client.ts:301-302`: `apiKey = readEnv('ANTHROPIC_API_KEY') ?? null`
+        // keeps a set-but-empty variable as `''`. That is safe in TS only
+        // because callers who must not read the environment pass an explicit
+        // `null`, which `Option<String>` cannot express yet; until it can, an
+        // empty variable stays unset here.
+        let api_key = opts
+            .api_key
+            .clone()
+            .or_else(|| read_env("ANTHROPIC_API_KEY").filter(|s| !s.is_empty()));
 
-        let auth_token = opts.auth_token.clone().or_else(|| {
-            std::env::var("ANTHROPIC_AUTH_TOKEN")
-                .ok()
-                .map(|s| s.trim().to_owned())
-                .filter(|s| !s.is_empty())
-        });
+        let auth_token = opts
+            .auth_token
+            .clone()
+            .or_else(|| read_env("ANTHROPIC_AUTH_TOKEN").filter(|s| !s.is_empty()));
 
         let auth_token_provider = opts.auth_token_provider.clone();
 
+        // TS `client.ts:300,309`: `baseURL || 'https://api.anthropic.com'`, so
+        // an empty variable falls back to the default.
         let base_url = opts
             .base_url
             .clone()
             .filter(|s| !s.is_empty())
-            .or_else(|| {
-                std::env::var("ANTHROPIC_BASE_URL")
-                    .ok()
-                    .map(|s| s.trim().to_owned())
-                    .filter(|s| !s.is_empty())
-            })
+            .or_else(|| read_env("ANTHROPIC_BASE_URL").filter(|s| !s.is_empty()))
             .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
 
         let timeout_ms = opts.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
         let max_retries = opts.max_retries.unwrap_or(DEFAULT_MAX_RETRIES);
         let logger = opts.logger.clone();
+        // TS `parseLogLevel` (`log.ts:29-31`) treats an empty value as unset.
         let log_level = opts.log_level.unwrap_or_else(|| {
-            std::env::var("ANTHROPIC_LOG")
-                .ok()
-                .map(|value| value.trim().to_owned())
+            read_env("ANTHROPIC_LOG")
                 .filter(|value| !value.is_empty())
                 .and_then(|value| {
                     LogLevel::from_env_value(&value).or_else(|| {
@@ -3870,6 +3868,20 @@ mod tests {
         assert_eq!(client.api_key(), Some("env-key"));
         assert_eq!(client.auth_token(), Some("env-token"));
         assert_eq!(client.base_url(), "https://example.com/trimmed");
+    }
+
+    /// TS `baseURL || 'https://api.anthropic.com'` treats `''` as unset.
+    #[test]
+    fn env_empty_base_url_falls_back_to_default() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_empty_base_url_falls_back_to_default",
+            &[("ANTHROPIC_BASE_URL", " ")],
+        ) {
+            return;
+        }
+        let client = Anthropic::new(ClientOptions::default()).unwrap();
+        assert_eq!(client.base_url(), DEFAULT_BASE_URL);
     }
 
     // -- retry-after header tests --

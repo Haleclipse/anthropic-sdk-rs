@@ -3,10 +3,16 @@
 # stable only since 1.88).
 msrv = "1.85"
 
-# Tests set environment through `tests/support/child_env.rs` (a child process
-# spawned with an exact environment); nothing writes the process environment,
-# which is `unsafe` since edition 2024 and races with any concurrent reader.
+# Reads go through `internal::env::read_env`, the SDK's single environment
+# reader (TS `readEnv`). Tests set environment through
+# `tests/support/child_env.rs` (a child process spawned with an exact
+# environment); nothing writes the process environment, which is `unsafe`
+# since edition 2024 and races with any concurrent reader.
 disallowed-methods = [
+    { path = "std::env::var", reason = "use anthropic_sdk::internal::env::read_env, the SDK's single environment reader" },
+    { path = "std::env::var_os", reason = "use anthropic_sdk::internal::env::read_env, the SDK's single environment reader" },
+    { path = "std::env::vars", reason = "use anthropic_sdk::internal::env::read_env, the SDK's single environment reader" },
+    { path = "std::env::vars_os", reason = "use anthropic_sdk::internal::env::read_env, the SDK's single environment reader" },
     { path = "std::env::set_var", reason = "use tests/support/child_env.rs; the SDK never writes the process environment" },
     { path = "std::env::remove_var", reason = "use tests/support/child_env.rs; the SDK never writes the process environment" },
 ]

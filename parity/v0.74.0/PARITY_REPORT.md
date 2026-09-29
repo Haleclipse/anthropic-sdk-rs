@@ -3,6 +3,13 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Single environment reader (2026-09-29)
+
+- `internal::env::read_env` (TS `readEnv`) is now the SDK's only reader of the process environment: the core constructor and the Bedrock/Vertex/Foundry `from_env` read through it, and `clippy.toml` rejects `std::env::var`/`var_os`/`vars`/`vars_os` elsewhere. Each use site applies TS's own rule (`??` keeps `''`; `||`, `!x` and `parseLogLevel` treat it as unset), cited inline.
+- `read_env` trims with ECMAScript `String.prototype.trim` (Unicode White_Space plus U+FEFF, minus U+0085, checked against Node over every code point) and decodes a non-UTF-8 value with U+FFFD replacements as Node does, instead of treating it as unset.
+- Deliberately unchanged for now: a set-but-empty `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` still counts as unset. TS keeps it as `''`, which is only safe alongside an explicit `null` option (callers that must not consult the environment pass `null`); that lands together with three-state credential options, empty-value header validation, and WHATWG header-value whitespace normalization.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets` — passed (697 tests).
+
 ## Edition 2024 and environment-free tests (2026-09-29)
 
 - Moved the workspace to edition 2024 (`rust-version` stays 1.85). The only source changes are redundant `ref mut` bindings in stream accumulators (`rust_2024_incompatible_pat`); `if_let_rescope` and `tail_expr_drop_order` sites were reviewed and involve no observable destructor. `rustfmt.toml` keeps `style_edition = "2021"` so the move carries no reformatting; `clippy.toml` sets `msrv = "1.85"` so no lint suggests later syntax.

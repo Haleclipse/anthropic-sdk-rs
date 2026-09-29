@@ -15,6 +15,7 @@ use crate::core::streaming::BedrockEventStream;
 use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
+use anthropic_sdk::internal::env::read_env;
 use anthropic_sdk::resources::beta::messages::{
     BetaMessage, BetaMessageCreateParams, BetaMessageStreamEvent,
 };
@@ -143,14 +144,11 @@ impl BedrockConfig {
     /// chain resolve them so profile/SSO/IMDS precedence stays with the AWS
     /// SDK implementation.
     pub fn from_env() -> Self {
-        let aws_region = std::env::var("AWS_REGION")
-            .ok()
-            .map(|value| value.trim().to_owned())
-            .unwrap_or_else(|| "us-east-1".to_owned());
+        // TS `client.ts:61-62`: both use `??`, so a set-but-empty variable is
+        // kept as `""` rather than replaced by the default.
+        let aws_region = read_env("AWS_REGION").unwrap_or_else(|| "us-east-1".to_owned());
 
-        let base_url = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
-            .ok()
-            .map(|value| value.trim().to_owned());
+        let base_url = read_env("ANTHROPIC_BEDROCK_BASE_URL");
 
         Self {
             aws_region,

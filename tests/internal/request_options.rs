@@ -312,6 +312,28 @@ fn client_options_log_level_reads_env() {
     assert_eq!(client.log_level(), LogLevel::Debug);
 }
 
+/// TS `parseLogLevel` (`log.ts:29-31`) returns before warning on `''`, and
+/// `readEnv` has trimmed a blank value to `''`.
+#[test]
+fn client_options_log_level_blank_env_is_unset_without_warning() {
+    if crate::child_env::run_in_child_env(
+        module_path!(),
+        "client_options_log_level_blank_env_is_unset_without_warning",
+        &[("ANTHROPIC_LOG", " ")],
+    ) {
+        return;
+    }
+    let logger = Arc::new(CaptureLogger::default());
+    let client = Anthropic::new(ClientOptions {
+        api_key: Some("test-api-key".to_owned()),
+        logger: Some(logger.clone()),
+        ..Default::default()
+    })
+    .expect("client creation should succeed");
+    assert_eq!(client.log_level(), LogLevel::Warn);
+    assert!(logger.messages.lock().unwrap().is_empty());
+}
+
 #[test]
 fn client_options_log_level_invalid_env_warns_and_explicit_option_skips_env() {
     if crate::child_env::run_in_child_env(

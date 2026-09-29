@@ -2,19 +2,34 @@
 //
 //! Environment-variable helpers.
 //!
-//! The TypeScript SDK's `readEnv()` trims leading/trailing whitespace and
-//! returns `undefined` when an environment variable is absent or inaccessible.
-//! Rust does not expose Deno/browser environments, so this helper maps to
-//! `std::env::var`, trims the value, and returns `None` for missing or invalid
-//! environment values.
+//! The TypeScript SDK's `readEnv()` is its only reader of the process
+//! environment: it trims the value and returns `undefined` when the variable
+//! is absent. [`read_env`] is likewise this SDK's only reader (`clippy.toml`
+//! rejects `std::env::var*` elsewhere). Rust has no Deno/browser runtime, so
+//! it reads the process environment directly.
+
+use std::ffi::OsStr;
 
 /// Read and trim an environment variable.
 ///
-/// Maps to TS `readEnv(env)`.
+/// Maps to TS `readEnv(env)`: `process.env[env]?.trim() ?? undefined`. A set
+/// but empty (or all-whitespace) variable is `Some("")`, not `None`: `??` only
+/// replaces `undefined`.
+#[allow(clippy::disallowed_methods)] // The SDK's single environment reader.
 pub fn read_env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_owned())
+    std::env::var_os(name).map(|value| decode(&value))
+}
+
+/// Node decodes a non-UTF-8 value with U+FFFD replacements rather than
+/// treating the variable as unset, then `readEnv` trims it.
+fn decode(value: &OsStr) -> String {
+    js_trim(&value.to_string_lossy()).to_owned()
+}
+
+/// `String.prototype.trim`: ECMAScript WhiteSpace and LineTerminator. That is
+/// Unicode White_Space plus U+FEFF, minus U+0085, which `str::trim` strips.
+fn js_trim(value: &str) -> &str {
+    value.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 
 /// TS-style camelCase alias for [`read_env`].
@@ -51,5 +66,23 @@ mod tests {
             read_env("ANTHROPIC_SDK_RS_READ_ENV_BLANK"),
             Some(String::new())
         );
+    }
+
+    #[test]
+    fn js_trim_uses_ecmascript_whitespace() {
+        // JS strips the BOM, Rust's `trim` does not.
+        assert_eq!(js_trim("\u{feff} key \u{feff}"), "key");
+        // Rust's `trim` strips NEL, JS does not.
+        assert_eq!(js_trim("\u{85}key\u{85}"), "\u{85}key\u{85}");
+        assert_eq!(js_trim("\u{3000}\t\u{2028}key\r\n\u{a0}"), "key");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn decode_replaces_invalid_utf8_like_node() {
+        use std::os::unix::ffi::OsStrExt;
+        // Node: `process.env.X` for bytes `a\xffb` is "a\u{fffd}b".
+        let value = OsStr::from_bytes(b" a\xffb ");
+        assert_eq!(decode(value), "a\u{fffd}b");
     }
 }

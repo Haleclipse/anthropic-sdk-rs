@@ -40,6 +40,9 @@ const PASS_THROUGH: &[&str] = &[
 ///
 /// `module_path` is the caller's `module_path!()` and `test` its function
 /// name; together they form the libtest name the child filters on.
+// Reads the marker and the pass-through set from the real environment: this
+// is the test-harness boundary, not SDK behaviour.
+#[allow(clippy::disallowed_methods)]
 pub fn run_in_child_env(module_path: &str, test: &str, vars: &[(&str, &str)]) -> bool {
     // libtest names omit the crate: `anthropic_sdk::client::tests` becomes
     // `client::tests`, and an integration-test crate root has no prefix.
