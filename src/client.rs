@@ -3464,11 +3464,9 @@ mod tests {
 
     #[test]
     fn build_headers_no_auth_error() {
-        // Construct without any auth and with no env vars set. Skip if env
-        // vars happen to be set (cannot safely unset across threads).
-        if std::env::var("ANTHROPIC_API_KEY").is_ok()
-            || std::env::var("ANTHROPIC_AUTH_TOKEN").is_ok()
-        {
+        // No auth option and no auth variable: the child's environment has
+        // neither, whatever the host exports.
+        if crate::child_env::run_in_child_env(module_path!(), "build_headers_no_auth_error", &[]) {
             return;
         }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
@@ -3812,95 +3810,66 @@ mod tests {
     }
 
     // -- env var tests (TS: "with environment variable arguments") --
-    // NOTE: env var tests are inherently racy in multi-threaded test runners.
-    // We use serial-unfriendly env manipulation so each test checks whether
-    // the var is already set before proceeding.
+    // Each runs in a child process whose environment is exactly the listed
+    // variables (`crate::child_env`), so no test writes the process
+    // environment.
 
     #[test]
     fn env_var_api_key_read() {
-        // Save + set
-        let prev = std::env::var("ANTHROPIC_API_KEY").ok();
-        std::env::set_var("ANTHROPIC_API_KEY", "env-test-key");
-
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_var_api_key_read",
+            &[("ANTHROPIC_API_KEY", "env-test-key")],
+        ) {
+            return;
+        }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
         assert_eq!(client.api_key(), Some("env-test-key"));
-
-        // Restore
-        match prev {
-            Some(v) => std::env::set_var("ANTHROPIC_API_KEY", v),
-            None => std::env::remove_var("ANTHROPIC_API_KEY"),
-        }
     }
 
     #[test]
     fn env_var_auth_token_read() {
-        let prev_key = std::env::var("ANTHROPIC_API_KEY").ok();
-        let prev_token = std::env::var("ANTHROPIC_AUTH_TOKEN").ok();
-        std::env::set_var("ANTHROPIC_AUTH_TOKEN", "env-token-123");
-        // Ensure api_key is set so client construction succeeds
-        std::env::set_var("ANTHROPIC_API_KEY", "dummy");
-
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_var_auth_token_read",
+            &[("ANTHROPIC_AUTH_TOKEN", "env-token-123")],
+        ) {
+            return;
+        }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
         assert_eq!(client.auth_token(), Some("env-token-123"));
-
-        // Restore
-        match prev_key {
-            Some(v) => std::env::set_var("ANTHROPIC_API_KEY", v),
-            None => std::env::remove_var("ANTHROPIC_API_KEY"),
-        }
-        match prev_token {
-            Some(v) => std::env::set_var("ANTHROPIC_AUTH_TOKEN", v),
-            None => std::env::remove_var("ANTHROPIC_AUTH_TOKEN"),
-        }
     }
 
     #[test]
     fn env_var_base_url_read() {
-        let prev_key = std::env::var("ANTHROPIC_API_KEY").ok();
-        let prev_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-        std::env::set_var("ANTHROPIC_BASE_URL", "https://example.com/from_env");
-        std::env::set_var("ANTHROPIC_API_KEY", "dummy");
-
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_var_base_url_read",
+            &[("ANTHROPIC_BASE_URL", "https://example.com/from_env")],
+        ) {
+            return;
+        }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
         assert_eq!(client.base_url(), "https://example.com/from_env");
-
-        // Restore
-        match prev_key {
-            Some(v) => std::env::set_var("ANTHROPIC_API_KEY", v),
-            None => std::env::remove_var("ANTHROPIC_API_KEY"),
-        }
-        match prev_url {
-            Some(v) => std::env::set_var("ANTHROPIC_BASE_URL", v),
-            None => std::env::remove_var("ANTHROPIC_BASE_URL"),
-        }
     }
 
     #[test]
     fn env_vars_are_trimmed_like_ts_read_env() {
-        let prev_key = std::env::var("ANTHROPIC_API_KEY").ok();
-        let prev_token = std::env::var("ANTHROPIC_AUTH_TOKEN").ok();
-        let prev_url = std::env::var("ANTHROPIC_BASE_URL").ok();
-        std::env::set_var("ANTHROPIC_API_KEY", " env-key ");
-        std::env::set_var("ANTHROPIC_AUTH_TOKEN", " env-token ");
-        std::env::set_var("ANTHROPIC_BASE_URL", " https://example.com/trimmed ");
-
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_vars_are_trimmed_like_ts_read_env",
+            &[
+                ("ANTHROPIC_API_KEY", " env-key "),
+                ("ANTHROPIC_AUTH_TOKEN", " env-token "),
+                ("ANTHROPIC_BASE_URL", " https://example.com/trimmed "),
+            ],
+        ) {
+            return;
+        }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
         assert_eq!(client.api_key(), Some("env-key"));
         assert_eq!(client.auth_token(), Some("env-token"));
         assert_eq!(client.base_url(), "https://example.com/trimmed");
-
-        match prev_key {
-            Some(v) => std::env::set_var("ANTHROPIC_API_KEY", v),
-            None => std::env::remove_var("ANTHROPIC_API_KEY"),
-        }
-        match prev_token {
-            Some(v) => std::env::set_var("ANTHROPIC_AUTH_TOKEN", v),
-            None => std::env::remove_var("ANTHROPIC_AUTH_TOKEN"),
-        }
-        match prev_url {
-            Some(v) => std::env::set_var("ANTHROPIC_BASE_URL", v),
-            None => std::env::remove_var("ANTHROPIC_BASE_URL"),
-        }
     }
 
     // -- retry-after header tests --

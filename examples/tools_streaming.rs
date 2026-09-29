@@ -88,9 +88,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ContentBlockDelta::TextDelta { text } => {
                     print!("{text}");
                     // Update the text in our tracked blocks
-                    if let Some(ContentBlock::Text {
-                        text: ref mut t, ..
-                    }) = assistant_content_blocks.get_mut(index)
+                    if let Some(ContentBlock::Text { text: t, .. }) =
+                        assistant_content_blocks.get_mut(index)
                     {
                         t.push_str(&text);
                     }
@@ -105,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if current_tool_id.is_some() {
                     let full_json: String = input_json_parts.join("");
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&full_json) {
-                        if let Some(ContentBlock::ToolUse { ref mut input, .. }) =
+                        if let Some(ContentBlock::ToolUse { input, .. }) =
                             assistant_content_blocks.get_mut(index)
                         {
                             *input = parsed;

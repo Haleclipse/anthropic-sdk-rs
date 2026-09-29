@@ -275,27 +275,52 @@ impl HttpMiddleware for AddHeaderMiddleware {
     }
 }
 
-#[test]
-fn client_options_log_level_env_default_invalid_and_override_match_ts() {
-    let original = std::env::var_os("ANTHROPIC_LOG");
+// `ANTHROPIC_LOG` per TS `client.ts:321-327`, one child environment each
+// (`crate::child_env`): unset, valid, invalid.
 
-    std::env::remove_var("ANTHROPIC_LOG");
+#[test]
+fn client_options_log_level_defaults_to_warn_without_env() {
+    if crate::child_env::run_in_child_env(
+        module_path!(),
+        "client_options_log_level_defaults_to_warn_without_env",
+        &[],
+    ) {
+        return;
+    }
     let client = Anthropic::new(ClientOptions {
         api_key: Some("test-api-key".to_owned()),
         ..Default::default()
     })
     .expect("client creation should succeed");
     assert_eq!(client.log_level(), LogLevel::Warn);
+}
 
-    std::env::set_var("ANTHROPIC_LOG", "debug");
+#[test]
+fn client_options_log_level_reads_env() {
+    if crate::child_env::run_in_child_env(
+        module_path!(),
+        "client_options_log_level_reads_env",
+        &[("ANTHROPIC_LOG", "debug")],
+    ) {
+        return;
+    }
     let client = Anthropic::new(ClientOptions {
         api_key: Some("test-api-key".to_owned()),
         ..Default::default()
     })
     .expect("client creation should succeed");
     assert_eq!(client.log_level(), LogLevel::Debug);
+}
 
-    std::env::set_var("ANTHROPIC_LOG", "not a log level");
+#[test]
+fn client_options_log_level_invalid_env_warns_and_explicit_option_skips_env() {
+    if crate::child_env::run_in_child_env(
+        module_path!(),
+        "client_options_log_level_invalid_env_warns_and_explicit_option_skips_env",
+        &[("ANTHROPIC_LOG", "not a log level")],
+    ) {
+        return;
+    }
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
         api_key: Some("test-api-key".to_owned()),
@@ -320,12 +345,8 @@ fn client_options_log_level_env_default_invalid_and_override_match_ts() {
     })
     .expect("client creation should succeed");
     assert_eq!(client.log_level(), LogLevel::Off);
+    // The invalid variable is still set: an explicit level never reads it.
     assert!(logger.messages.lock().unwrap().is_empty());
-
-    match original {
-        Some(value) => std::env::set_var("ANTHROPIC_LOG", value),
-        None => std::env::remove_var("ANTHROPIC_LOG"),
-    }
 }
 
 #[tokio::test]

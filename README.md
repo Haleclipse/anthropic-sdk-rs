@@ -46,11 +46,11 @@ The expected validation gate for parity work is:
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-RUST_TEST_THREADS=1 cargo test --workspace --all-targets
+cargo test --workspace --all-targets
 rg "not yet implemented|TODO: Implement|unimplemented|todo!|not implemented" src packages || true
 ```
 
-The serialized provider/env tests mutate process environment variables; run workspace tests with `RUST_TEST_THREADS=1` to avoid cross-test pollution.
+No test writes the process environment. Tests of environment defaults run in a child process spawned with an exact environment (`tests/support/child_env.rs`), and `clippy.toml` rejects `std::env::set_var`/`remove_var`.
 
 ## Rust-native scope notes
 

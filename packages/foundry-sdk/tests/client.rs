@@ -17,6 +17,9 @@ use serde_json::Value;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[path = "../../../tests/support/child_env.rs"]
+mod child_env;
+
 fn foundry_config(resource: &str) -> FoundryConfig {
     FoundryConfig {
         resource: resource.to_owned(),
@@ -521,7 +524,13 @@ impl TokenProvider for CountingTokenProvider {
 
 #[tokio::test]
 async fn token_provider_is_invoked_per_request_and_sets_bearer_auth() {
-    std::env::set_var("ANTHROPIC_API_KEY", "ambient-key-should-not-leak");
+    if child_env::run_in_child_env(
+        module_path!(),
+        "token_provider_is_invoked_per_request_and_sets_bearer_auth",
+        &[("ANTHROPIC_API_KEY", "ambient-key-should-not-leak")],
+    ) {
+        return;
+    }
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -564,8 +573,6 @@ async fn token_provider_is_invoked_per_request_and_sets_bearer_auth() {
     );
     assert!(requests[0].headers.get("x-api-key").is_none());
     assert!(requests[1].headers.get("x-api-key").is_none());
-
-    std::env::remove_var("ANTHROPIC_API_KEY");
 }
 
 #[test]
@@ -680,34 +687,56 @@ async fn token_provider_empty_string_is_rejected_like_ts() {
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
+// `from_env` scenarios, one child environment each (`child_env`).
+
 #[test]
-fn from_env_scenarios() {
-    std::env::remove_var("ANTHROPIC_FOUNDRY_RESOURCE");
-    std::env::remove_var("AZURE_AI_FOUNDRY_RESOURCE");
-    std::env::remove_var("ANTHROPIC_FOUNDRY_API_KEY");
-    std::env::remove_var("AZURE_AI_FOUNDRY_API_KEY");
-    std::env::remove_var("ANTHROPIC_FOUNDRY_BASE_URL");
+fn from_env_requires_resource_or_base_url() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_requires_resource_or_base_url",
+        &[],
+    ) {
+        return;
+    }
+    assert!(FoundryConfig::from_env().is_err());
+}
 
-    let result = FoundryConfig::from_env();
-    assert!(result.is_err());
-
-    std::env::set_var("ANTHROPIC_FOUNDRY_RESOURCE", " primary-res ");
-    std::env::set_var("AZURE_AI_FOUNDRY_RESOURCE", "ignored-fallback-res");
-    std::env::set_var("ANTHROPIC_FOUNDRY_API_KEY", " primary-key ");
-    std::env::set_var("AZURE_AI_FOUNDRY_API_KEY", "ignored-fallback-key");
-
+#[test]
+fn from_env_reads_primary_resource_and_key_and_trims() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_reads_primary_resource_and_key_and_trims",
+        &[
+            ("ANTHROPIC_FOUNDRY_RESOURCE", " primary-res "),
+            ("AZURE_AI_FOUNDRY_RESOURCE", "ignored-fallback-res"),
+            ("ANTHROPIC_FOUNDRY_API_KEY", " primary-key "),
+            ("AZURE_AI_FOUNDRY_API_KEY", "ignored-fallback-key"),
+        ],
+    ) {
+        return;
+    }
     let cfg = FoundryConfig::from_env().unwrap();
     assert_eq!(cfg.resource, "primary-res");
     assert_eq!(cfg.api_key.as_deref(), Some("primary-key"));
     assert!(cfg.base_url.is_none());
+}
 
-    std::env::remove_var("ANTHROPIC_FOUNDRY_RESOURCE");
-    std::env::remove_var("AZURE_AI_FOUNDRY_RESOURCE");
-    std::env::set_var(
-        "ANTHROPIC_FOUNDRY_BASE_URL",
-        " https://override.example.com ",
-    );
-
+#[test]
+fn from_env_reads_base_url_without_resource() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_reads_base_url_without_resource",
+        &[
+            ("ANTHROPIC_FOUNDRY_API_KEY", " primary-key "),
+            ("AZURE_AI_FOUNDRY_API_KEY", "ignored-fallback-key"),
+            (
+                "ANTHROPIC_FOUNDRY_BASE_URL",
+                " https://override.example.com ",
+            ),
+        ],
+    ) {
+        return;
+    }
     let cfg = FoundryConfig::from_env().unwrap();
     assert_eq!(cfg.resource, "");
     assert_eq!(cfg.api_key.as_deref(), Some("primary-key"));
@@ -715,18 +744,28 @@ fn from_env_scenarios() {
         cfg.base_url.as_deref(),
         Some("https://override.example.com")
     );
+}
 
-    std::env::set_var("ANTHROPIC_FOUNDRY_RESOURCE", "primary-res");
+#[test]
+fn from_env_rejects_resource_with_base_url() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_rejects_resource_with_base_url",
+        &[
+            ("ANTHROPIC_FOUNDRY_RESOURCE", "primary-res"),
+            ("ANTHROPIC_FOUNDRY_API_KEY", " primary-key "),
+            (
+                "ANTHROPIC_FOUNDRY_BASE_URL",
+                " https://override.example.com ",
+            ),
+        ],
+    ) {
+        return;
+    }
     let result = FoundryConfig::from_env();
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
         "SDK error: baseURL and resource are mutually exclusive"
     );
-
-    std::env::remove_var("ANTHROPIC_FOUNDRY_RESOURCE");
-    std::env::remove_var("ANTHROPIC_FOUNDRY_API_KEY");
-    std::env::remove_var("ANTHROPIC_FOUNDRY_BASE_URL");
-    std::env::remove_var("AZURE_AI_FOUNDRY_RESOURCE");
-    std::env::remove_var("AZURE_AI_FOUNDRY_API_KEY");
 }

@@ -3,6 +3,13 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Edition 2024 and environment-free tests (2026-09-29)
+
+- Moved the workspace to edition 2024 (`rust-version` stays 1.85). The only source changes are redundant `ref mut` bindings in stream accumulators (`rust_2024_incompatible_pat`); `if_let_rescope` and `tail_expr_drop_order` sites were reviewed and involve no observable destructor. `rustfmt.toml` keeps `style_edition = "2021"` so the move carries no reformatting; `clippy.toml` sets `msrv = "1.85"` so no lint suggests later syntax.
+- Tests no longer write the process environment. The TS suite assigns to `process.env`; in Rust `std::env::set_var` is `unsafe` since edition 2024 and races with any concurrent reader. Each environment-default test now runs in a child copy of the test binary spawned with an exact environment (`tests/support/child_env.rs`); multi-step scenarios became one test per step. Host variables such as `ANTHROPIC_API_KEY` no longer change results, and `build_headers_no_auth_error` no longer skips itself. `clippy.toml` rejects `std::env::set_var`/`remove_var`.
+- No public API or runtime behaviour changed.
+- Verification: `cargo fmt --all -- --check`, strict all-target/all-feature Clippy, and `cargo test --workspace --all-targets` — passed (693 tests; the step splits add 8).
+
 ## Final v0.74.0 synchronization (2026-07-15)
 
 - Re-audited stable/beta resource models, discriminated unions, request header parameters, resource paths, helper exports, provider packages, and upstream tests against the pristine TypeScript v0.74.0 tag.

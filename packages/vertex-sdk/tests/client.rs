@@ -17,6 +17,9 @@ use serde_json::Value;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[path = "../../../tests/support/child_env.rs"]
+mod child_env;
+
 fn vertex_config(project_id: &str, region: &str) -> VertexConfig {
     VertexConfig {
         project_id: project_id.to_owned(),
@@ -748,7 +751,13 @@ async fn beta_messages_tool_runner_uses_raw_predict_path() {
 
 #[tokio::test]
 async fn access_token_sets_bearer_auth_and_disables_anthropic_api_key() {
-    std::env::set_var("ANTHROPIC_API_KEY", "ambient-key-should-not-leak");
+    if child_env::run_in_child_env(
+        module_path!(),
+        "access_token_sets_bearer_auth_and_disables_anthropic_api_key",
+        &[("ANTHROPIC_API_KEY", "ambient-key-should-not-leak")],
+    ) {
+        return;
+    }
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -770,8 +779,6 @@ async fn access_token_sets_bearer_auth_and_disables_anthropic_api_key() {
         "Bearer vertex-token"
     );
     assert!(requests[0].headers.get("x-api-key").is_none());
-
-    std::env::remove_var("ANTHROPIC_API_KEY");
 }
 
 struct CountingTokenProvider {
@@ -883,38 +890,56 @@ async fn token_provider_is_invoked_per_request() {
     );
 }
 
-#[test]
-fn from_env_scenarios() {
-    std::env::remove_var("ANTHROPIC_VERTEX_PROJECT_ID");
-    std::env::remove_var("CLOUD_ML_PROJECT_ID");
-    std::env::remove_var("GOOGLE_CLOUD_PROJECT");
-    std::env::remove_var("ANTHROPIC_VERTEX_REGION");
-    std::env::remove_var("CLOUD_ML_REGION");
-    std::env::remove_var("ANTHROPIC_VERTEX_BASE_URL");
+// `from_env` scenarios, one child environment each (`child_env`).
 
+#[test]
+fn from_env_requires_region() {
+    if child_env::run_in_child_env(module_path!(), "from_env_requires_region", &[]) {
+        return;
+    }
     let result = VertexConfig::from_env();
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
         "SDK error: No region was given. The client should be instantiated with the `region` option or the `CLOUD_ML_REGION` environment variable should be set."
     );
+}
 
-    std::env::set_var("CLOUD_ML_REGION", " primary-region ");
+#[test]
+fn from_env_requires_project_id() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_requires_project_id",
+        &[("CLOUD_ML_REGION", " primary-region ")],
+    ) {
+        return;
+    }
     let result = VertexConfig::from_env();
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),
         "SDK error: No projectId was given and it could not be resolved from credentials. The client should be instantiated with the `projectId` option or the `ANTHROPIC_VERTEX_PROJECT_ID` environment variable should be set."
     );
+}
 
-    std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", " primary-project ");
-    std::env::set_var("CLOUD_ML_PROJECT_ID", "ignored-project");
-    std::env::set_var("ANTHROPIC_VERTEX_REGION", "ignored-region");
-    std::env::set_var(
-        "ANTHROPIC_VERTEX_BASE_URL",
-        " https://override.example.com ",
-    );
-
+#[test]
+fn from_env_reads_primary_names_and_trims() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_reads_primary_names_and_trims",
+        &[
+            ("CLOUD_ML_REGION", " primary-region "),
+            ("ANTHROPIC_VERTEX_PROJECT_ID", " primary-project "),
+            ("CLOUD_ML_PROJECT_ID", "ignored-project"),
+            ("ANTHROPIC_VERTEX_REGION", "ignored-region"),
+            (
+                "ANTHROPIC_VERTEX_BASE_URL",
+                " https://override.example.com ",
+            ),
+        ],
+    ) {
+        return;
+    }
     let cfg = VertexConfig::from_env().unwrap();
     assert_eq!(cfg.project_id, "primary-project");
     assert_eq!(cfg.region, "primary-region");
@@ -922,13 +947,6 @@ fn from_env_scenarios() {
         cfg.base_url.as_deref(),
         Some("https://override.example.com")
     );
-
-    std::env::remove_var("ANTHROPIC_VERTEX_PROJECT_ID");
-    std::env::remove_var("ANTHROPIC_VERTEX_REGION");
-    std::env::remove_var("ANTHROPIC_VERTEX_BASE_URL");
-    std::env::remove_var("CLOUD_ML_PROJECT_ID");
-    std::env::remove_var("GOOGLE_CLOUD_PROJECT");
-    std::env::remove_var("CLOUD_ML_REGION");
 }
 
 #[test]

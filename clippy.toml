@@ -1,0 +1,12 @@
+# The core crate's `rust-version`, applied to every member: moving to edition
+# 2024 must not raise the minimum toolchain (e.g. by suggesting let chains,
+# stable only since 1.88).
+msrv = "1.85"
+
+# Tests set environment through `tests/support/child_env.rs` (a child process
+# spawned with an exact environment); nothing writes the process environment,
+# which is `unsafe` since edition 2024 and races with any concurrent reader.
+disallowed-methods = [
+    { path = "std::env::set_var", reason = "use tests/support/child_env.rs; the SDK never writes the process environment" },
+    { path = "std::env::remove_var", reason = "use tests/support/child_env.rs; the SDK never writes the process environment" },
+]

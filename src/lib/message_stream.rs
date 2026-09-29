@@ -402,7 +402,7 @@ fn accumulate_into(
 
         // -- message_delta ---------------------------------------------------
         MessageStreamEvent::MessageDelta { delta, usage } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 // Unconditionally assign to match TS SDK behaviour.
                 msg.stop_reason = delta.stop_reason.clone();
                 msg.stop_sequence = delta.stop_sequence.clone();
@@ -415,14 +415,14 @@ fn accumulate_into(
             content_block,
             index: _,
         } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 msg.content.push(content_block.clone());
             }
         }
 
         // -- content_block_delta ---------------------------------------------
         MessageStreamEvent::ContentBlockDelta { delta, index } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 let idx = *index;
                 if let Some(block) = msg.content.get_mut(idx) {
                     apply_content_delta(block, delta, idx, json_bufs)?;
@@ -479,21 +479,14 @@ fn apply_content_delta(
     match delta {
         // -- text_delta ------------------------------------------------------
         ContentBlockDelta::TextDelta { text } => {
-            if let ContentBlock::Text {
-                text: ref mut existing,
-                ..
-            } = block
-            {
+            if let ContentBlock::Text { text: existing, .. } = block {
                 existing.push_str(text);
             }
         }
 
         // -- citations_delta -------------------------------------------------
         ContentBlockDelta::CitationsDelta { citation } => {
-            if let ContentBlock::Text {
-                ref mut citations, ..
-            } = block
-            {
+            if let ContentBlock::Text { citations, .. } = block {
                 citations
                     .get_or_insert_with(Vec::new)
                     .push(citation.clone());
@@ -517,10 +510,10 @@ fn apply_content_delta(
                         ))
                     })?;
                     match block {
-                        ContentBlock::ToolUse { ref mut input, .. } => {
+                        ContentBlock::ToolUse { input, .. } => {
                             *input = parsed;
                         }
-                        ContentBlock::ServerToolUse { ref mut input, .. } => {
+                        ContentBlock::ServerToolUse { input, .. } => {
                             *input = parsed;
                         }
                         _ => {} // unreachable given the guard above
@@ -532,8 +525,7 @@ fn apply_content_delta(
         // -- thinking_delta --------------------------------------------------
         ContentBlockDelta::ThinkingDelta { thinking } => {
             if let ContentBlock::Thinking {
-                thinking: ref mut existing,
-                ..
+                thinking: existing, ..
             } = block
             {
                 existing.push_str(thinking);
@@ -543,7 +535,7 @@ fn apply_content_delta(
         // -- signature_delta -------------------------------------------------
         ContentBlockDelta::SignatureDelta { signature } => {
             if let ContentBlock::Thinking {
-                signature: ref mut existing,
+                signature: existing,
                 ..
             } = block
             {

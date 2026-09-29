@@ -355,7 +355,7 @@ fn accumulate_into(
             usage,
             context_management,
         } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 msg.container = delta.container.clone();
                 msg.stop_reason = delta.stop_reason.clone();
                 msg.stop_sequence = delta.stop_sequence.clone();
@@ -372,12 +372,12 @@ fn accumulate_into(
             content_block,
             index: _,
         } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 msg.content.push(content_block.clone());
             }
         }
         BetaMessageStreamEvent::ContentBlockDelta { delta, index } => {
-            if let Some(ref mut msg) = current_message {
+            if let Some(msg) = current_message {
                 let idx = *index;
                 if let Some(block) = msg.content.get_mut(idx) {
                     apply_content_delta(block, delta, idx, json_bufs)?;
@@ -422,19 +422,12 @@ fn apply_content_delta(
 ) -> Result<(), ApiError> {
     match delta {
         BetaContentBlockDelta::TextDelta { text } => {
-            if let BetaContentBlock::Text {
-                text: ref mut existing,
-                ..
-            } = block
-            {
+            if let BetaContentBlock::Text { text: existing, .. } = block {
                 existing.push_str(text);
             }
         }
         BetaContentBlockDelta::CitationsDelta { citation } => {
-            if let BetaContentBlock::Text {
-                ref mut citations, ..
-            } = block
-            {
+            if let BetaContentBlock::Text { citations, .. } = block {
                 citations
                     .get_or_insert_with(Vec::new)
                     .push(citation.clone());
@@ -458,11 +451,11 @@ fn apply_content_delta(
                         ))
                     })?;
                     match block {
-                        BetaContentBlock::ToolUse { ref mut input, .. }
-                        | BetaContentBlock::McpToolUse { ref mut input, .. } => {
+                        BetaContentBlock::ToolUse { input, .. }
+                        | BetaContentBlock::McpToolUse { input, .. } => {
                             *input = parsed;
                         }
-                        BetaContentBlock::ServerToolUse { ref mut input, .. } => {
+                        BetaContentBlock::ServerToolUse { input, .. } => {
                             if let serde_json::Value::Object(map) = parsed {
                                 *input = map.into_iter().collect();
                             }
@@ -474,8 +467,7 @@ fn apply_content_delta(
         }
         BetaContentBlockDelta::ThinkingDelta { thinking } => {
             if let BetaContentBlock::Thinking {
-                thinking: ref mut existing,
-                ..
+                thinking: existing, ..
             } = block
             {
                 existing.push_str(thinking);
@@ -483,7 +475,7 @@ fn apply_content_delta(
         }
         BetaContentBlockDelta::SignatureDelta { signature } => {
             if let BetaContentBlock::Thinking {
-                signature: ref mut existing,
+                signature: existing,
                 ..
             } = block
             {

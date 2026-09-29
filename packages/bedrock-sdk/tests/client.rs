@@ -25,7 +25,8 @@ use sha2::{Digest, Sha256};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+#[path = "../../../tests/support/child_env.rs"]
+mod child_env;
 
 fn bedrock_config(region: &str) -> BedrockConfig {
     BedrockConfig {
@@ -263,16 +264,22 @@ fn rewrite_url_encodes_bedrock_model_id_like_ts_path_tag() {
     );
 }
 
-#[tokio::test]
-async fn from_env_defaults_region_and_leaves_credentials_to_aws_sdk_chain() {
-    let _env_guard = ENV_LOCK.lock().await;
-    std::env::remove_var("AWS_REGION");
-    std::env::remove_var("AWS_DEFAULT_REGION");
-    std::env::remove_var("ANTHROPIC_BEDROCK_BASE_URL");
-    std::env::set_var("AWS_ACCESS_KEY_ID", "env-key");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "env-secret");
-    std::env::set_var("AWS_SESSION_TOKEN", "env-token");
+// Environment tests run in a child process whose environment is exactly the
+// listed variables (`child_env`), so no test writes the process environment.
 
+#[test]
+fn from_env_defaults_region_and_leaves_credentials_to_aws_sdk_chain() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_defaults_region_and_leaves_credentials_to_aws_sdk_chain",
+        &[
+            ("AWS_ACCESS_KEY_ID", "env-key"),
+            ("AWS_SECRET_ACCESS_KEY", "env-secret"),
+            ("AWS_SESSION_TOKEN", "env-token"),
+        ],
+    ) {
+        return;
+    }
     let cfg = BedrockConfig::from_env();
     assert_eq!(cfg.aws_region, "us-east-1");
     assert!(cfg.base_url.is_none());
@@ -280,30 +287,36 @@ async fn from_env_defaults_region_and_leaves_credentials_to_aws_sdk_chain() {
     assert!(cfg.aws_secret_key.is_none());
     assert!(cfg.aws_session_token.is_none());
     assert!(!cfg.skip_auth);
-
-    std::env::remove_var("AWS_ACCESS_KEY_ID");
-    std::env::remove_var("AWS_SECRET_ACCESS_KEY");
-    std::env::remove_var("AWS_SESSION_TOKEN");
 }
 
-#[tokio::test]
-async fn from_env_matches_ts_env_names_and_trimming() {
-    let _env_guard = ENV_LOCK.lock().await;
-    std::env::remove_var("AWS_REGION");
-    std::env::set_var("AWS_DEFAULT_REGION", "ignored-region");
-    std::env::set_var("ANTHROPIC_BEDROCK_BASE_URL", " https://bedrock.local ");
-
+#[test]
+fn from_env_matches_ts_env_names_and_trimming() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_matches_ts_env_names_and_trimming",
+        &[
+            ("AWS_DEFAULT_REGION", "ignored-region"),
+            ("ANTHROPIC_BEDROCK_BASE_URL", " https://bedrock.local "),
+        ],
+    ) {
+        return;
+    }
     let cfg = BedrockConfig::from_env();
     assert_eq!(cfg.aws_region, "us-east-1");
     assert_eq!(cfg.base_url.as_deref(), Some("https://bedrock.local"));
+}
 
-    std::env::set_var("AWS_REGION", " eu-west-3 ");
+#[test]
+fn from_env_trims_aws_region() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "from_env_trims_aws_region",
+        &[("AWS_REGION", " eu-west-3 ")],
+    ) {
+        return;
+    }
     let cfg = BedrockConfig::from_env();
     assert_eq!(cfg.aws_region, "eu-west-3");
-
-    std::env::remove_var("AWS_REGION");
-    std::env::remove_var("AWS_DEFAULT_REGION");
-    std::env::remove_var("ANTHROPIC_BEDROCK_BASE_URL");
 }
 
 #[test]
@@ -443,11 +456,19 @@ async fn inherited_beta_resources_are_sigv4_signed_like_official_prepare_request
 
 #[tokio::test]
 async fn messages_create_uses_aws_sdk_default_provider_chain_env_credentials() {
-    let _env_guard = ENV_LOCK.lock().await;
-    std::env::set_var("AWS_ACCESS_KEY_ID", "AWSCHAINKEY");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "aws-chain-secret");
-    std::env::set_var("AWS_SESSION_TOKEN", "aws-chain-session");
-    std::env::remove_var("AWS_PROFILE");
+    // Beyond `from_env`, the AWS SDK's own credential chain reads the process
+    // environment here; no SDK option can stand in for it.
+    if child_env::run_in_child_env(
+        module_path!(),
+        "messages_create_uses_aws_sdk_default_provider_chain_env_credentials",
+        &[
+            ("AWS_ACCESS_KEY_ID", "AWSCHAINKEY"),
+            ("AWS_SECRET_ACCESS_KEY", "aws-chain-secret"),
+            ("AWS_SESSION_TOKEN", "aws-chain-session"),
+        ],
+    ) {
+        return;
+    }
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -499,10 +520,6 @@ async fn messages_create_uses_aws_sdk_default_provider_chain_env_credentials() {
         requests[0].headers.get("x-amz-security-token").unwrap(),
         "aws-chain-session"
     );
-
-    std::env::remove_var("AWS_ACCESS_KEY_ID");
-    std::env::remove_var("AWS_SECRET_ACCESS_KEY");
-    std::env::remove_var("AWS_SESSION_TOKEN");
 }
 
 fn completion_params(model: &str) -> CompletionCreateParams {

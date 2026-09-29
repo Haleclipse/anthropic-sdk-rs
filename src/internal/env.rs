@@ -29,23 +29,27 @@ mod tests {
 
     #[test]
     fn read_env_trims_and_returns_none_for_absent_values_like_ts() {
-        let name = "ANTHROPIC_SDK_RS_READ_ENV_TEST";
-        let original = std::env::var_os(name);
-
-        std::env::remove_var(name);
-        assert_eq!(read_env(name), None);
-        assert_eq!(readEnv(name), None);
-
-        std::env::set_var(name, "  value with space  ");
-        assert_eq!(read_env(name), Some("value with space".to_owned()));
-        assert_eq!(readEnv(name), Some("value with space".to_owned()));
-
-        std::env::set_var(name, "   ");
-        assert_eq!(read_env(name), Some(String::new()));
-
-        match original {
-            Some(value) => std::env::set_var(name, value),
-            None => std::env::remove_var(name),
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "read_env_trims_and_returns_none_for_absent_values_like_ts",
+            &[
+                ("ANTHROPIC_SDK_RS_READ_ENV_PADDED", "  value with space  "),
+                ("ANTHROPIC_SDK_RS_READ_ENV_BLANK", "   "),
+            ],
+        ) {
+            return;
         }
+        let absent = "ANTHROPIC_SDK_RS_READ_ENV_ABSENT";
+        assert_eq!(read_env(absent), None);
+        assert_eq!(readEnv(absent), None);
+
+        let padded = "ANTHROPIC_SDK_RS_READ_ENV_PADDED";
+        assert_eq!(read_env(padded), Some("value with space".to_owned()));
+        assert_eq!(readEnv(padded), Some("value with space".to_owned()));
+
+        assert_eq!(
+            read_env("ANTHROPIC_SDK_RS_READ_ENV_BLANK"),
+            Some(String::new())
+        );
     }
 }

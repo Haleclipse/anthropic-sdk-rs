@@ -5,7 +5,7 @@ resolver = "2"
 [package]
 name = "anthropic-sdk"
 version = "0.74.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 description = "Unofficial Rust client for the Anthropic API, aligned with @anthropic-ai/sdk v0.74.0"
 license = "MIT"

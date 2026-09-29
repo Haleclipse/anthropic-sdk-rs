@@ -20,3 +20,6 @@ mod responses;
 
 #[path = "internal/streaming.rs"]
 mod streaming;
+
+#[path = "support/child_env.rs"]
+mod child_env;

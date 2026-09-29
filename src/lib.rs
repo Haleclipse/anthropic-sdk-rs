@@ -17,6 +17,10 @@ pub mod version;
 #[path = "lib/mod.rs"]
 pub mod sdk_lib;
 
+#[cfg(test)]
+#[path = "../tests/support/child_env.rs"]
+mod child_env;
+
 pub use client::{
     Anthropic, AuthTokenProvider, BaseAnthropic, ClientOptions, LogLevel, SdkLogger, AI_PROMPT,
     HUMAN_PROMPT,
