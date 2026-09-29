@@ -36,6 +36,7 @@ fn bedrock_config(region: &str) -> BedrockConfig {
         aws_session_token: None,
         base_url: None,
         credential_provider: None,
+        sdk_config: None,
         skip_auth: true,
     }
 }
@@ -162,6 +163,7 @@ fn get_auth_headers_signs_bedrock_request_with_static_credentials() {
         aws_session_token: Some("session-token".to_owned()),
         base_url: None,
         credential_provider: None,
+        sdk_config: None,
         skip_auth: false,
     };
     let body = br#"{"anthropic_version":"bedrock-2023-05-31","messages":[]}"#;
@@ -1247,6 +1249,306 @@ async fn messages_create_uses_custom_aws_credential_provider_per_request() {
         requests[1].headers.get("x-amz-security-token").unwrap(),
         "provider-session-2"
     );
+}
+
+/// An AWS SDK credentials provider that counts its lookups. `lifetime` sets
+/// each credential's expiry; `None` means it never expires.
+#[derive(Debug)]
+struct CountingSdkProvider {
+    counter: Arc<AtomicUsize>,
+    lifetime: Option<std::time::Duration>,
+}
+
+impl aws_credential_types::provider::ProvideCredentials for CountingSdkProvider {
+    fn provide_credentials<'a>(
+        &'a self,
+    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        let next = self.counter.fetch_add(1, Ordering::SeqCst) + 1;
+        aws_credential_types::provider::future::ProvideCredentials::ready(Ok(
+            aws_credential_types::Credentials::new(
+                format!("AKIDSDK{next}"),
+                "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+                Some(format!("sdk-session-{next}")),
+                self.lifetime
+                    .map(|lifetime| std::time::SystemTime::now() + lifetime),
+                "counting",
+            ),
+        ))
+    }
+}
+
+fn sdk_config_with(provider: CountingSdkProvider) -> aws_config::SdkConfig {
+    aws_config::SdkConfig::builder()
+        .credentials_provider(
+            aws_credential_types::provider::SharedCredentialsProvider::new(provider),
+        )
+        .build()
+}
+
+async fn mount_invoke(server: &MockServer, times: u64) {
+    Mock::given(method("POST"))
+        .and(path(
+            "/model/anthropic.claude-3-5-sonnet-20241022-v2:0/invoke",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_test",
+            "type": "message",
+            "role": "assistant",
+            "model": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "content": [],
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        })))
+        .expect(times)
+        .mount(server)
+        .await;
+}
+
+fn hello_message() -> MessageCreateParams {
+    MessageCreateParams {
+        model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_owned(),
+        max_tokens: 16,
+        messages: vec![MessageParam {
+            role: "user".to_owned(),
+            content: MessageContent::Text("hello".to_owned()),
+        }],
+        ..Default::default()
+    }
+}
+
+fn signing_key_ids(requests: &[wiremock::Request]) -> Vec<String> {
+    requests
+        .iter()
+        .map(|request| {
+            let authorization = request
+                .headers
+                .get("authorization")
+                .unwrap()
+                .to_str()
+                .unwrap();
+            let credential = authorization.split("Credential=").nth(1).unwrap();
+            credential.split('/').next().unwrap().to_owned()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn sdk_config_credentials_are_loaded_once_and_reused_until_expiry() {
+    let server = MockServer::start().await;
+    mount_invoke(&server, 2).await;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
+        counter: Arc::clone(&counter),
+        lifetime: None,
+    }));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    for _ in 0..2 {
+        client.messages().create(&hello_message()).await.unwrap();
+    }
+
+    // Go `WithConfig` + `aws.CredentialsCache`: credentials without an
+    // expiry are fetched once.
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
+    assert_eq!(
+        requests[1].headers.get("x-amz-security-token").unwrap(),
+        "sdk-session-1"
+    );
+}
+
+#[tokio::test]
+async fn expiring_credentials_are_reused_within_their_lifetime() {
+    let server = MockServer::start().await;
+    mount_invoke(&server, 2).await;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
+        counter: Arc::clone(&counter),
+        // IMDS, SSO and STS credentials carry an expiry like this one.
+        lifetime: Some(std::time::Duration::from_secs(3600)),
+    }));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    for _ in 0..2 {
+        client.messages().create(&hello_message()).await.unwrap();
+    }
+
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
+}
+
+/// An AWS SDK credentials provider whose every lookup fails after a delay.
+#[derive(Debug)]
+struct FailingSdkProvider {
+    counter: Arc<AtomicUsize>,
+}
+
+impl aws_credential_types::provider::ProvideCredentials for FailingSdkProvider {
+    fn provide_credentials<'a>(
+        &'a self,
+    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        let counter = Arc::clone(&self.counter);
+        aws_credential_types::provider::future::ProvideCredentials::new(async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            Err(
+                aws_credential_types::provider::error::CredentialsError::provider_error(
+                    "sso session expired",
+                ),
+            )
+        })
+    }
+}
+
+#[tokio::test]
+async fn concurrent_requests_share_one_failed_lookup() {
+    let server = MockServer::start().await;
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.sdk_config = Some(
+        aws_config::SdkConfig::builder()
+            .credentials_provider(
+                aws_credential_types::provider::SharedCredentialsProvider::new(
+                    FailingSdkProvider {
+                        counter: Arc::clone(&counter),
+                    },
+                ),
+            )
+            .build(),
+    );
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    let message = hello_message();
+    let messages = client.messages();
+    let results = futures::future::join_all((0..4).map(|_| messages.create(&message))).await;
+
+    // Go's singleflight: requests that waited for the lookup take its error
+    // instead of each running their own.
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    for result in results {
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains("from sdk_config") && error.contains("sso session expired"),
+            "{error}"
+        );
+    }
+
+    // A request that starts after the failure looks up again.
+    assert!(client.messages().create(&message).await.is_err());
+    assert_eq!(counter.load(Ordering::SeqCst), 2);
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn credentials_inside_the_refresh_buffer_are_fetched_again() {
+    let server = MockServer::start().await;
+    mount_invoke(&server, 2).await;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
+        counter: Arc::clone(&counter),
+        // Expires before the refresh buffer elapses.
+        lifetime: Some(anthropic_sdk_bedrock::CREDENTIALS_REFRESH_BUFFER / 2),
+    }));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    for _ in 0..2 {
+        client.messages().create(&hello_message()).await.unwrap();
+    }
+
+    assert_eq!(counter.load(Ordering::SeqCst), 2);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK2"]);
+}
+
+#[tokio::test]
+async fn custom_credential_provider_takes_precedence_over_sdk_config() {
+    let server = MockServer::start().await;
+    mount_invoke(&server, 1).await;
+
+    let custom = Arc::new(AtomicUsize::new(0));
+    let sdk = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.credential_provider = Some(Arc::new(CountingAwsProvider {
+        counter: Arc::clone(&custom),
+    }));
+    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
+        counter: Arc::clone(&sdk),
+        lifetime: None,
+    }));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    client.messages().create(&hello_message()).await.unwrap();
+
+    assert_eq!(custom.load(Ordering::SeqCst), 1);
+    assert_eq!(sdk.load(Ordering::SeqCst), 0);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDEXAMPLE1"]);
+}
+
+#[tokio::test]
+async fn wrapper_and_inherited_resources_share_one_credentials_cache() {
+    let server = MockServer::start().await;
+    mount_invoke(&server, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models/test-model"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "test-model",
+            "created_at": "2025-01-01T00:00:00Z",
+            "display_name": "Test model",
+            "type": "model"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let counter = Arc::new(AtomicUsize::new(0));
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
+        counter: Arc::clone(&counter),
+        lifetime: None,
+    }));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    // The wrapper signs `messages`; the core middleware signs the inherited
+    // beta resource. Both read the same cache.
+    client.messages().create(&hello_message()).await.unwrap();
+    client
+        .beta()
+        .models()
+        .retrieve("test-model", None)
+        .await
+        .unwrap();
+
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
 }
 
 #[tokio::test]

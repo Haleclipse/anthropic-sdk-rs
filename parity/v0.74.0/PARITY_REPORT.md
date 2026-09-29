@@ -3,6 +3,27 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Bedrock loads the AWS credential chain once per client (2026-09-30)
+
+TS resolves credentials on every request: `getAuthHeaders` builds a new `fromNodeProviderChain` each time and passes explicit keys to it by rewriting `process.env` around the call (`withTempEnv`). Until now the Rust port likewise ran `aws_config::defaults().load()` for every request. `withTempEnv` cannot be ported (writing the environment is `unsafe` since edition 2024 and races with other threads), so Bedrock follows Go instead, where `LoadDefaultConfig` loads once and wraps the chain in `aws.CredentialsCache`.
+
+- **Load once.** A client loads the AWS provider chain on the first request that needs it. aws-config 1.x does not cache `SdkConfig::credentials_provider()`; the AWS service clients use a separate identity cache. So each client also caches the credentials themselves:
+  - Credentials with an expiry are fetched again `CREDENTIALS_REFRESH_BUFFER` (10 s, the nominal buffer of the AWS SDK for Rust's lazy identity cache) before they expire. Go refreshes at expiry by default.
+  - Credentials without an expiry are reused for the client's lifetime, as in Go.
+  - The wrapper resources, the signing middleware and clones of the client share one cache. A new client starts empty: a host that builds a client per request (as Claude Code does) gains nothing, and should cache credentials itself and pass explicit keys, as Claude Code does.
+  - Concurrent requests wait for one lookup and share its result, failures included (Go's singleflight). A request that starts after a failure looks up again. No lookup timeout is imposed; none was before.
+  - Errors name the source (`sdk_config` or the default provider chain) and carry the provider's reason, not only `CredentialsError`'s kind.
+- **`sdk_config`.** New `BedrockConfig::sdk_config: Option<aws_config::SdkConfig>`, the Rust form of Go `bedrock.WithConfig(aws.Config)`. Only its credentials provider is used, cached as above; its identity cache is not. `sdk_config.region()` is ignored: `aws_region` still selects the endpoint and the signing region. The crate re-exports `aws_config`, so callers build the `SdkConfig` from the matching version.
+- **Precedence** is unchanged, with `sdk_config` inserted before the default chain: explicit keys, then `credential_provider` (TS `providerChainResolver`, still called for every request), then `sdk_config`, then the default chain.
+- **Observable differences from TS**, which re-resolves on every request:
+  - `AWS_PROFILE`, the `AWS_*` variables and `~/.aws` are read when the chain is loaded. aws-config parses the profile once per chain, so if the profile is missing at first use, the same client keeps failing after it is written; a new client succeeds. Before this change the next request recovered. Go and TS (whose ini loader caches even a failed read) behave like the new code.
+  - Credentials without an expiry (static keys, keys in a profile) are not re-read. For example, after a key is rotated or revoked the client keeps signing with the old one. Rebuild the client after an authentication error: Claude Code builds a new client per request and rebuilds on a Bedrock 403.
+  - TS keeps ini file contents in a process-wide cache (`@smithy/shared-ini-file-loader`), so it does not see a rotated `~/.aws/credentials` either until that cache is cleared.
+- **Not adopted from Go:** `AWS_BEARER_TOKEN_BEDROCK`. TS v0.74.0 does not read it. Claude Code reads it itself and sends it as `Authorization: Bearer` with `skipAuth`.
+- **Known difference from TS (existing, unchanged here):** explicit `aws_access_key`/`aws_secret_key` always win. In TS they reach the chain through the environment, which is skipped when `AWS_PROFILE` is set, so the profile wins there. TS also picks up an ambient `AWS_SESSION_TOKEN` when only the key pair is given.
+- **Breaking:** `BedrockConfig` gains a public field. Struct literals without `..` need `sdk_config: None`.
+- Verification: fmt, strict Clippy, `cargo doc -D warnings` and `cargo test --workspace --all-targets`: 713 passed. The 6 new tests cover reuse with and without an expiry, the refresh buffer, precedence over `credential_provider`, one cache shared by wrapper and middleware, and a concurrent failure shared by all waiters. Mutating the reuse check or the failure sharing fails the matching test.
+
 ## Provider crates leave the transport to the application (2026-09-29)
 
 - The Bedrock, Vertex and Foundry crates depended on `reqwest` with its default features. Cargo unifies features, so any build containing one of them turned those features on for every `reqwest` client in the graph, the core's included:
