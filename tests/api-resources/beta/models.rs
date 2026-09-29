@@ -18,7 +18,7 @@ fn assert_same_type<T: 'static, U: 'static>() {
 
 fn mock_client(server_url: &str) -> Anthropic {
     Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server_url.to_owned()),
         max_retries: Some(0),
         ..Default::default()

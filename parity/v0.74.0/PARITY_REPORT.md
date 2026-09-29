@@ -3,11 +3,23 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Three-state credentials (2026-09-29)
+
+- `ClientOptions.api_key`/`auth_token` are `Nullable<String>` (`Unset` / `Null` / `Set`), TS `string | null | undefined`. Only `Unset` takes the TS default parameter (`readEnv(..) ?? null`); an explicit `Null` never consults the environment. `Nullable` is exported from the crate root with `From<T>`/`From<&str>`, `from_resolved` (`None` → `Null`) and `resolve`. **Breaking:** `Some(key)` becomes `key.into()`; `None` becomes `Nullable::Unset` (keeps the env fallback) or `Nullable::Null`.
+- With `null` expressible, a set-but-empty `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` is kept as `''`, as in TS.
+- Header values are trimmed of leading/trailing HTTP whitespace after all layers merge (WHATWG `Headers.append`; checked in Node 24: TAB, LF, CR, SP only). An empty token is therefore sent as `Authorization: Bearer`, not `Bearer ` with a trailing space.
+- Validation tests values for truthiness like TS `validateHeaders`: an empty or whitespace-only API key is rejected; `Bearer` from an empty token passes.
+- `base_url: Some("")` takes the default without reading `ANTHROPIC_BASE_URL` (TS default parameter, then `baseURL || default`).
+- `with_options` passes the parent's resolved credentials back (`Set`/`Null`) and reuses the parent's HTTP client, as TS `withOptions` passes `apiKey`, `authToken` and `fetch`: a child reads no environment variable. Every request sets its own timeout, which reqwest prefers over the client's.
+- Providers: Foundry passes `api_key: from_resolved(config.api_key)`, `auth_token: Null` (TS overrides `authHeaders`, so neither Anthropic variable is ever sent); Vertex's token is `Null` without an `access_token` (TS always sends the GCP `Authorization` last, so an ambient Anthropic token never reaches Google); Bedrock keeps the core defaults (`Unset`). These close two leaks: Foundry api-key mode sent `ANTHROPIC_AUTH_TOKEN` to Azure, and Vertex without explicit auth sent it to Google.
+- `ClientOptions` `Debug` shows credentials as `Unset`/`Null`/`Set(***)`.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets` — passed (707 tests).
+
 ## Single environment reader (2026-09-29)
 
 - `internal::env::read_env` (TS `readEnv`) is now the SDK's only reader of the process environment: the core constructor and the Bedrock/Vertex/Foundry `from_env` read through it, and `clippy.toml` rejects `std::env::var`/`var_os`/`vars`/`vars_os` elsewhere. Each use site applies TS's own rule (`??` keeps `''`; `||`, `!x` and `parseLogLevel` treat it as unset), cited inline.
 - `read_env` trims with ECMAScript `String.prototype.trim` (Unicode White_Space plus U+FEFF, minus U+0085, checked against Node over every code point) and decodes a non-UTF-8 value with U+FFFD replacements as Node does, instead of treating it as unset.
-- Deliberately unchanged for now: a set-but-empty `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` still counts as unset. TS keeps it as `''`, which is only safe alongside an explicit `null` option (callers that must not consult the environment pass `null`); that lands together with three-state credential options, empty-value header validation, and WHATWG header-value whitespace normalization.
+- Deliberately unchanged in this step: a set-but-empty `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` still counted as unset. TS keeps it as `''`, which is only safe alongside an explicit `null` option (callers that must not consult the environment pass `null`); that landed with three-state credentials, above.
 - Verification: fmt, strict Clippy and `cargo test --workspace --all-targets` — passed (697 tests).
 
 ## Edition 2024 and environment-free tests (2026-09-29)

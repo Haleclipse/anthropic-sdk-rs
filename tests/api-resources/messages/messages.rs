@@ -23,7 +23,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 /// Build a client pointing at the given mock server URL.
 fn mock_client(server_url: &str) -> Anthropic {
     Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server_url.to_owned()),
         max_retries: Some(0),
         ..Default::default()
@@ -333,7 +333,7 @@ async fn messages_create_allows_long_nonstreaming_request_with_client_timeout_li
         .await;
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         timeout: Some(30 * 60 * 1000),

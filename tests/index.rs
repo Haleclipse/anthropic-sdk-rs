@@ -102,8 +102,8 @@ fn root_exports_client_names_like_ts_index() {
 #[test]
 fn client_ts_style_property_and_utility_aliases_are_available() {
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
-        auth_token: Some("test-auth-token".to_owned()),
+        api_key: "test-api-key".into(),
+        auth_token: "test-auth-token".into(),
         base_url: Some("http://localhost:5000/custom".to_owned()),
         timeout: Some(1234),
         max_retries: Some(4),

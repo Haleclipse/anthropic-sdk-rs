@@ -357,7 +357,7 @@ mod tests {
     fn logger_for_client_alias_uses_client_logger_and_log_level() {
         let logger = Arc::new(CaptureLogger::default());
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("test-api-key".to_owned()),
+            api_key: "test-api-key".into(),
             logger: Some(logger.clone()),
             log_level: Some(LogLevel::Error),
             ..Default::default()
@@ -383,7 +383,7 @@ mod tests {
     fn parse_log_level_with_warning_matches_ts_side_effect_shape() {
         let logger = Arc::new(CaptureLogger::default());
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("test-api-key".to_owned()),
+            api_key: "test-api-key".into(),
             logger: Some(logger.clone()),
             log_level: Some(LogLevel::Warn),
             ..Default::default()

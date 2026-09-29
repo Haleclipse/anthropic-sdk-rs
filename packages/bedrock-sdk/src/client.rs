@@ -12,7 +12,7 @@ use std::sync::Arc;
 use aws_credential_types::provider::ProvideCredentials;
 
 use crate::core::streaming::BedrockEventStream;
-use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions};
+use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions, Nullable};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
 use anthropic_sdk::internal::env::read_env;
@@ -298,8 +298,13 @@ pub fn create_client_with_core_options(
     }
 
     core_options.base_url = Some(base_url);
-    core_options.api_key = None;
-    core_options.auth_token = None;
+    // TS `AnthropicBedrock` passes neither to `super`, so the core defaults
+    // (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) still apply. On the wire
+    // this port differs for the key: TS sends it (inside the SigV4
+    // signature), while its header is omitted above. The token matches TS
+    // under `skip_auth`; SigV4 replaces it otherwise.
+    core_options.api_key = Nullable::Unset;
+    core_options.auth_token = Nullable::Unset;
     core_options.auth_token_provider = None;
     core_options.default_headers = Some(default_headers);
     // The official provider signs every request in prepareRequest(), including

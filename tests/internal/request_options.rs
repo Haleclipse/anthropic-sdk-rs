@@ -23,7 +23,7 @@ fn mock_client(server_url: &str, max_retries: u32) -> Anthropic {
     default_query.insert("remove".to_owned(), Some("default".to_owned()));
 
     Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server_url.to_owned()),
         max_retries: Some(max_retries),
         default_headers: Some(default_headers),
@@ -55,7 +55,7 @@ async fn client_options_custom_http_client_is_used_and_inherited_like_ts_custom_
         .unwrap();
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         http_client: Some(http_client),
@@ -125,7 +125,7 @@ async fn request_retries_on_timeout_like_ts_index_retry_on_timeout_case() {
         .await;
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         timeout: Some(150),
         max_retries: Some(1),
@@ -173,7 +173,7 @@ async fn request_options_http_client_overrides_client_http_client_like_per_reque
         .unwrap();
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         ..Default::default()
@@ -288,7 +288,7 @@ fn client_options_log_level_defaults_to_warn_without_env() {
         return;
     }
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         ..Default::default()
     })
     .expect("client creation should succeed");
@@ -305,7 +305,7 @@ fn client_options_log_level_reads_env() {
         return;
     }
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         ..Default::default()
     })
     .expect("client creation should succeed");
@@ -325,7 +325,7 @@ fn client_options_log_level_blank_env_is_unset_without_warning() {
     }
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         logger: Some(logger.clone()),
         ..Default::default()
     })
@@ -345,7 +345,7 @@ fn client_options_log_level_invalid_env_warns_and_explicit_option_skips_env() {
     }
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         logger: Some(logger.clone()),
         ..Default::default()
     })
@@ -360,7 +360,7 @@ fn client_options_log_level_invalid_env_warns_and_explicit_option_skips_env() {
 
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         log_level: Some(LogLevel::Off),
         logger: Some(logger.clone()),
         ..Default::default()
@@ -384,7 +384,7 @@ async fn client_options_logger_and_log_level_capture_request_lifecycle_like_ts_l
 
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         log_level: Some(LogLevel::Info),
@@ -421,8 +421,8 @@ async fn client_options_debug_logging_redacts_sensitive_headers_like_ts_format_r
 
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("secret-api-key".to_owned()),
-        auth_token: Some("secret-auth-token".to_owned()),
+        api_key: "secret-api-key".into(),
+        auth_token: "secret-auth-token".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         log_level: Some(LogLevel::Debug),
@@ -515,7 +515,7 @@ async fn client_options_retry_logging_includes_request_log_id_and_retry_of_like_
 
     let logger = Arc::new(CaptureLogger::default());
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(1),
         log_level: Some(LogLevel::Debug),
@@ -673,7 +673,7 @@ async fn request_options_default_base_url_used_only_when_client_base_is_default(
         .await;
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         max_retries: Some(0),
         ..Default::default()
     })
@@ -1002,7 +1002,7 @@ async fn client_and_request_middlewares_mutate_requests_and_observe_responses_li
     let request_middleware = AddHeaderMiddleware::new("x-request-middleware", "request");
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(0),
         middlewares: vec![Arc::new(client_middleware.clone()) as Arc<dyn HttpMiddleware>],
@@ -1163,7 +1163,7 @@ async fn default_headers_can_remove_retry_count_header_like_ts_omit_retry_count_
         .await;
 
     let client = Anthropic::new(ClientOptions {
-        api_key: Some("test-api-key".to_owned()),
+        api_key: "test-api-key".into(),
         base_url: Some(server.uri()),
         max_retries: Some(1),
         default_headers: Some(HashMap::from([(

@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use anthropic_sdk::client::{Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions};
+use anthropic_sdk::client::{
+    Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions, Nullable,
+};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::ApiResponse;
 use anthropic_sdk::core::streaming::SseStream;
@@ -348,8 +350,12 @@ pub fn create_client_with_core_options(
     }
 
     core_options.base_url = Some(url);
-    core_options.api_key = config.api_key;
-    core_options.auth_token = None;
+    // TS `AnthropicFoundry` passes `apiKey: azureADTokenProvider ?? apiKey`
+    // and overrides `authHeaders` (`client.ts:96,103-131`): only the Foundry
+    // key or the provider's token is ever sent, never `ANTHROPIC_API_KEY` or
+    // `ANTHROPIC_AUTH_TOKEN`.
+    core_options.api_key = Nullable::from_resolved(config.api_key);
+    core_options.auth_token = Nullable::Null;
     core_options.auth_token_provider = auth_token_provider;
     core_options.default_headers = if default_headers.is_empty() {
         None

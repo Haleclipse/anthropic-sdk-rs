@@ -10,7 +10,9 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use anthropic_sdk::client::{Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions};
+use anthropic_sdk::client::{
+    Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions, Nullable,
+};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
 use anthropic_sdk::core::streaming::SseStream;
@@ -330,8 +332,17 @@ pub fn create_client_with_core_options(
     }
 
     core_options.base_url = Some(base_url);
-    core_options.api_key = None;
-    core_options.auth_token = config.access_token.clone();
+    // TS `AnthropicVertex` passes neither to `super`, but always adds the GCP
+    // `Authorization` as the last header layer (`client.ts:109-131`), so an
+    // ambient `ANTHROPIC_AUTH_TOKEN` never reaches Google. This port has no
+    // default GCP auth, so the equivalent is an explicit `Null` unless an
+    // `access_token` is given. The API key keeps the core default; its header
+    // is omitted above.
+    core_options.api_key = Nullable::Unset;
+    core_options.auth_token = match &config.access_token {
+        Some(token) => Nullable::Set(token.clone()),
+        None => Nullable::Null,
+    };
     core_options.auth_token_provider = auth_token_provider;
     core_options.default_headers = Some(default_headers);
 

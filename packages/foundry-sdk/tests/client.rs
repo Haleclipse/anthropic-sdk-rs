@@ -105,6 +105,27 @@ fn core_options_are_preserved_like_ts_provider_extends_core_client_options() {
     assert_eq!(headers.get("x-api-key").unwrap(), "test-key");
 }
 
+/// TS `AnthropicFoundry` overrides `authHeaders` (`client.ts:103-131`): only
+/// the Foundry key is sent, never `ANTHROPIC_API_KEY` or
+/// `ANTHROPIC_AUTH_TOKEN` from the environment.
+#[test]
+fn api_key_mode_never_sends_anthropic_env_credentials() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "api_key_mode_never_sends_anthropic_env_credentials",
+        &[
+            ("ANTHROPIC_API_KEY", "ambient-key"),
+            ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
+        ],
+    ) {
+        return;
+    }
+    let client = create_client(foundry_config("example-resource")).unwrap();
+    let headers = client.build_headers(0, None).unwrap();
+    assert_eq!(headers.get("x-api-key").unwrap(), "test-key");
+    assert!(headers.get("authorization").is_none());
+}
+
 #[test]
 fn create_client_rejects_base_url_and_resource_like_ts() {
     let mut cfg = foundry_config("example-resource");

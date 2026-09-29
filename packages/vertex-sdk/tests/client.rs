@@ -749,6 +749,29 @@ async fn beta_messages_tool_runner_uses_raw_predict_path() {
     );
 }
 
+/// TS `AnthropicVertex` always puts the GCP `Authorization` last
+/// (`client.ts:109-131`), so an ambient Anthropic token never reaches
+/// Google; without an access token or provider this port sends none.
+#[test]
+fn ambient_anthropic_credentials_are_never_sent_to_vertex() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "ambient_anthropic_credentials_are_never_sent_to_vertex",
+        &[
+            ("ANTHROPIC_API_KEY", "ambient-key"),
+            ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
+        ],
+    ) {
+        return;
+    }
+    let mut cfg = vertex_config("my-project", "us-east5");
+    cfg.access_token = None;
+    let client = create_client(&cfg).unwrap();
+    let headers = client.build_headers(0, None).unwrap();
+    assert!(headers.get("authorization").is_none(), "{headers:?}");
+    assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+}
+
 #[tokio::test]
 async fn access_token_sets_bearer_auth_and_disables_anthropic_api_key() {
     if child_env::run_in_child_env(

@@ -179,17 +179,74 @@ pub trait SdkLogger: Send + Sync {
     fn log(&self, level: LogLevel, message: &str);
 }
 
+/// An option that TS types as `T | null | undefined`.
+///
+/// The three states differ observably: an omitted (`undefined`) credential
+/// falls back to its environment variable, while an explicit `null` means
+/// "none, and do not consult the environment". `Option<T>` cannot say both.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Nullable<T> {
+    /// Omitted (`undefined`): the default applies, e.g. the environment.
+    #[default]
+    Unset,
+    /// Explicit `null`: no value, and no default is consulted.
+    Null,
+    /// A value.
+    Set(T),
+}
+
+impl<T> Nullable<T> {
+    /// A value already resolved to "present or null", as TS passes
+    /// `this.apiKey` back in `withOptions`: `None` becomes [`Nullable::Null`].
+    pub fn from_resolved(value: Option<T>) -> Self {
+        match value {
+            Some(value) => Self::Set(value),
+            None => Self::Null,
+        }
+    }
+
+    /// Applies a TS default parameter such as
+    /// `apiKey = readEnv('ANTHROPIC_API_KEY') ?? null`: only an omitted value
+    /// takes `default`.
+    pub fn resolve(self, default: impl FnOnce() -> Option<T>) -> Option<T> {
+        match self {
+            Self::Unset => default(),
+            Self::Null => None,
+            Self::Set(value) => Some(value),
+        }
+    }
+
+    /// Whether the value was omitted.
+    pub fn is_unset(&self) -> bool {
+        matches!(self, Self::Unset)
+    }
+}
+
+impl<T> From<T> for Nullable<T> {
+    fn from(value: T) -> Self {
+        Self::Set(value)
+    }
+}
+
+impl From<&str> for Nullable<String> {
+    fn from(value: &str) -> Self {
+        Self::Set(value.to_owned())
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ClientOptions {
     /// API key for `X-Api-Key` header authentication.
-    /// Defaults to `ANTHROPIC_API_KEY` env var.
-    /// Maps to: TS `ClientOptions.apiKey`
-    pub api_key: Option<String>,
+    /// Omitted: `ANTHROPIC_API_KEY`, else none. `Null`: none, without reading
+    /// the environment.
+    /// Maps to: TS `ClientOptions.apiKey` (`string | null | undefined`)
+    pub api_key: Nullable<String>,
 
     /// Auth token for `Authorization: Bearer` authentication.
-    /// Defaults to `ANTHROPIC_AUTH_TOKEN` env var.
-    /// Maps to: TS `ClientOptions.authToken`
-    pub auth_token: Option<String>,
+    /// Omitted: `ANTHROPIC_AUTH_TOKEN`, else none. `Null`: none, without
+    /// reading the environment.
+    /// Maps to: TS `ClientOptions.authToken` (`string | null | undefined`)
+    pub auth_token: Nullable<String>,
 
     /// Async bearer-token provider invoked for each request attempt. This is a
     /// Rust provider-SDK extension for TS provider hooks such as Foundry's
@@ -197,7 +254,9 @@ pub struct ClientOptions {
     pub auth_token_provider: Option<Arc<dyn AuthTokenProvider>>,
 
     /// Override the default base URL for the API.
-    /// Defaults to `ANTHROPIC_BASE_URL` env var, then `https://api.anthropic.com`.
+    /// Omitted: `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com`.
+    /// `Some("")`: the default, without reading the environment (TS `''` or
+    /// `null`, both falsy in `baseURL || default`).
     /// Maps to: TS `ClientOptions.baseURL`
     pub base_url: Option<String>,
 
@@ -243,11 +302,23 @@ pub struct ClientOptions {
     pub default_query: Option<HashMap<String, Option<String>>>,
 }
 
+/// Debug form of a credential option that never prints the secret.
+fn redacted(value: &Nullable<String>) -> &'static str {
+    match value {
+        Nullable::Unset => "Unset",
+        Nullable::Null => "Null",
+        Nullable::Set(_) => "Set(***)",
+    }
+}
+
 impl fmt::Debug for ClientOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ClientOptions")
-            .field("api_key", &self.api_key.as_ref().map(|_| "***"))
-            .field("auth_token", &self.auth_token.as_ref().map(|_| "***"))
+            .field("api_key", &format_args!("{}", redacted(&self.api_key)))
+            .field(
+                "auth_token",
+                &format_args!("{}", redacted(&self.auth_token)),
+            )
             .field(
                 "auth_token_provider",
                 &self
@@ -358,30 +429,32 @@ impl Anthropic {
     /// Creates a new client. Fields not set in `opts` fall back to environment
     /// variables and then to compiled-in defaults.
     pub fn new(opts: ClientOptions) -> Result<Self, ApiError> {
-        // TS `client.ts:301-302`: `apiKey = readEnv('ANTHROPIC_API_KEY') ?? null`
-        // keeps a set-but-empty variable as `''`. That is safe in TS only
-        // because callers who must not read the environment pass an explicit
-        // `null`, which `Option<String>` cannot express yet; until it can, an
-        // empty variable stays unset here.
+        // TS `client.ts:301-302,335-336`:
+        // `apiKey = readEnv('ANTHROPIC_API_KEY') ?? null`. Only an omitted
+        // value reads the environment; an explicit `null` does not, and a
+        // set-but-empty variable stays `''` (request-time validation then
+        // rejects an empty key, as TS does).
         let api_key = opts
             .api_key
             .clone()
-            .or_else(|| read_env("ANTHROPIC_API_KEY").filter(|s| !s.is_empty()));
+            .resolve(|| read_env("ANTHROPIC_API_KEY"));
 
         let auth_token = opts
             .auth_token
             .clone()
-            .or_else(|| read_env("ANTHROPIC_AUTH_TOKEN").filter(|s| !s.is_empty()));
+            .resolve(|| read_env("ANTHROPIC_AUTH_TOKEN"));
 
         let auth_token_provider = opts.auth_token_provider.clone();
 
-        // TS `client.ts:300,309`: `baseURL || 'https://api.anthropic.com'`, so
-        // an empty variable falls back to the default.
+        // TS `client.ts:300,309`: `baseURL = readEnv('ANTHROPIC_BASE_URL')` only
+        // when omitted, then `baseURL || 'https://api.anthropic.com'`. An
+        // explicit `''` therefore takes the default without reading the
+        // environment, and so does an empty variable.
         let base_url = opts
             .base_url
             .clone()
+            .or_else(|| read_env("ANTHROPIC_BASE_URL"))
             .filter(|s| !s.is_empty())
-            .or_else(|| read_env("ANTHROPIC_BASE_URL").filter(|s| !s.is_empty()))
             .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned());
 
         let timeout_ms = opts.timeout.unwrap_or(DEFAULT_TIMEOUT_MS);
@@ -442,18 +515,28 @@ impl Anthropic {
     /// Creates a child client that inherits the current client's resolved
     /// settings, with overrides applied from `overrides`.
     pub fn with_options(&self, overrides: ClientOptions) -> Result<Self, ApiError> {
+        // TS `client.ts:342-357` passes the parent's resolved `apiKey`,
+        // `authToken` and `fetch` (never `undefined`), so a child reads no
+        // environment variable and reuses the parent's transport.
+        let inherit = |override_value: Nullable<String>, resolved: &Option<String>| {
+            if override_value.is_unset() {
+                Nullable::from_resolved(resolved.clone())
+            } else {
+                override_value
+            }
+        };
         let merged = ClientOptions {
-            api_key: overrides.api_key.or_else(|| self.api_key.clone()),
-            auth_token: overrides.auth_token.or_else(|| self.auth_token.clone()),
+            api_key: inherit(overrides.api_key, &self.api_key),
+            auth_token: inherit(overrides.auth_token, &self.auth_token),
             auth_token_provider: overrides
                 .auth_token_provider
                 .or_else(|| self.auth_token_provider.clone()),
             base_url: overrides.base_url.or_else(|| Some(self.base_url.clone())),
             timeout: overrides.timeout.or(Some(self.timeout_ms)),
             max_retries: overrides.max_retries.or(Some(self.max_retries)),
-            http_client: overrides
-                .http_client
-                .or_else(|| self._options.http_client.clone()),
+            // Every request sets its own timeout, so the parent's client
+            // serves a child with a different `timeout` too.
+            http_client: overrides.http_client.or_else(|| Some(self.http.clone())),
             middlewares: {
                 let mut middlewares = self.middlewares.clone();
                 middlewares.extend(overrides.middlewares.clone());
@@ -842,10 +925,28 @@ impl Anthropic {
             }
         }
 
+        // TS `buildHeaders` appends every layer to a WHATWG `Headers`, whose
+        // `append` strips leading and trailing HTTP whitespace from the value:
+        // `authToken: ''` is sent as `Authorization: Bearer`, and a
+        // whitespace-only key becomes `''`.
+        for value in map.values_mut().flatten() {
+            let trimmed = value.trim_matches(|c| matches!(c, '\t' | '\n' | '\r' | ' '));
+            if trimmed.len() != value.len() {
+                *value = trimmed.to_owned();
+            }
+        }
+
         // Validate that at least one auth mechanism is present (or explicitly
-        // removed via None).
-        if map.get("x-api-key").and_then(|v| v.as_ref()).is_none()
-            && map.get("authorization").and_then(|v| v.as_ref()).is_none()
+        // removed via None). TS `validateHeaders` (`client.ts:370-392`) tests
+        // the values for truthiness, so an empty value counts as absent: an
+        // empty API key is rejected, while `Bearer` from an empty token passes.
+        let has_value = |name: &str| {
+            map.get(name)
+                .and_then(|v| v.as_deref())
+                .is_some_and(|v| !v.is_empty())
+        };
+        if !has_value("x-api-key")
+            && !has_value("authorization")
             && self.auth_token_provider.is_none()
         {
             // Check if either was explicitly nulled out (user intentionally
@@ -3307,7 +3408,7 @@ mod tests {
     /// interfere.
     fn test_client() -> Anthropic {
         Anthropic::new(ClientOptions {
-            api_key: Some("test-key".to_owned()),
+            api_key: "test-key".into(),
             ..Default::default()
         })
         .unwrap() // safe in tests
@@ -3324,7 +3425,7 @@ mod tests {
     #[test]
     fn custom_options() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("sk-custom".to_owned()),
+            api_key: "sk-custom".into(),
             base_url: Some("https://custom.example.com".to_owned()),
             timeout: Some(30_000),
             max_retries: Some(5),
@@ -3341,7 +3442,7 @@ mod tests {
     #[test]
     fn empty_base_url_option_falls_back_like_ts_constructor() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("sk-custom".to_owned()),
+            api_key: "sk-custom".into(),
             base_url: Some(String::new()),
             ..Default::default()
         })
@@ -3429,7 +3530,7 @@ mod tests {
     #[test]
     fn build_headers_bearer_auth() {
         let client = Anthropic::new(ClientOptions {
-            auth_token: Some("my-token".to_owned()),
+            auth_token: "my-token".into(),
             ..Default::default()
         })
         .unwrap();
@@ -3443,7 +3544,7 @@ mod tests {
     #[test]
     fn build_headers_none_removes() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("x-custom".to_owned(), Some("val".to_owned()));
@@ -3527,7 +3628,7 @@ mod tests {
     #[test]
     fn default_headers_are_used_in_request() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("x-my-default-header".to_owned(), Some("2".to_owned()));
@@ -3552,7 +3653,7 @@ mod tests {
         // override the default. Rust uses None for removal, so this test verifies
         // that NOT specifying a key in extra_headers preserves the default.
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("x-my-default-header".to_owned(), Some("2".to_owned()));
@@ -3577,7 +3678,7 @@ mod tests {
     fn default_headers_can_be_removed_with_none() {
         // TS: setting a header to null removes it. Rust uses None for this.
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("x-my-default-header".to_owned(), Some("2".to_owned()));
@@ -3598,7 +3699,7 @@ mod tests {
     #[test]
     fn default_query_with_no_per_request_query() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_query: Some({
                 let mut m = HashMap::new();
                 m.insert("apiVersion".to_owned(), Some("foo".to_owned()));
@@ -3615,7 +3716,7 @@ mod tests {
     #[test]
     fn default_query_multiple_params() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_query: Some({
                 let mut m = HashMap::new();
                 m.insert("apiVersion".to_owned(), Some("foo".to_owned()));
@@ -3634,7 +3735,7 @@ mod tests {
     #[test]
     fn default_query_override_with_none_removes() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_query: Some({
                 let mut m = HashMap::new();
                 m.insert("hello".to_owned(), Some("world".to_owned()));
@@ -3656,7 +3757,7 @@ mod tests {
     #[test]
     fn base_url_trailing_slash() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             base_url: Some("http://localhost:5000/custom/path/".to_owned()),
             ..Default::default()
         })
@@ -3669,7 +3770,7 @@ mod tests {
     #[test]
     fn base_url_no_trailing_slash() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             base_url: Some("http://localhost:5000/custom/path".to_owned()),
             ..Default::default()
         })
@@ -3682,7 +3783,7 @@ mod tests {
     #[test]
     fn base_url_explicit_option() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             base_url: Some("https://example.com".to_owned()),
             ..Default::default()
         })
@@ -3704,7 +3805,7 @@ mod tests {
     #[test]
     fn max_retries_option_is_correctly_set() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             max_retries: Some(4),
             ..Default::default()
         })
@@ -3720,7 +3821,7 @@ mod tests {
     #[test]
     fn with_options_inherits_default_headers_and_query() {
         let parent = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("x-test".to_owned(), Some("val".to_owned()));
@@ -3782,7 +3883,7 @@ mod tests {
     #[test]
     fn custom_headers_case_insensitive_merge_and_null_remove() {
         let client = Anthropic::new(ClientOptions {
-            api_key: Some("k".to_owned()),
+            api_key: "k".into(),
             default_headers: Some({
                 let mut m = HashMap::new();
                 m.insert("X-Foo".to_owned(), Some("baz".to_owned()));
@@ -3882,6 +3983,183 @@ mod tests {
         }
         let client = Anthropic::new(ClientOptions::default()).unwrap();
         assert_eq!(client.base_url(), DEFAULT_BASE_URL);
+    }
+
+    /// TS `apiKey = readEnv(..) ?? null` keeps a set-but-empty variable as
+    /// `''`, which `validateHeaders` then rejects; an explicit `''` too.
+    #[test]
+    fn env_empty_api_key_is_kept_and_rejected_like_ts() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_empty_api_key_is_kept_and_rejected_like_ts",
+            &[("ANTHROPIC_API_KEY", "  ")],
+        ) {
+            return;
+        }
+        let from_env = Anthropic::new(ClientOptions::default()).unwrap();
+        assert_eq!(from_env.api_key(), Some(""));
+        let explicit = Anthropic::new(ClientOptions {
+            api_key: "".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        for client in [from_env, explicit] {
+            let err = client.build_headers(0, None).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("Could not resolve authentication method"),
+                "{err}"
+            );
+        }
+    }
+
+    /// TS `authToken: ''` is kept too; `Headers.append` strips the trailing
+    /// space, so `Authorization: Bearer` is sent and passes validation.
+    #[test]
+    fn env_empty_auth_token_sends_bearer_like_ts() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "env_empty_auth_token_sends_bearer_like_ts",
+            &[("ANTHROPIC_AUTH_TOKEN", "")],
+        ) {
+            return;
+        }
+        let client = Anthropic::new(ClientOptions::default()).unwrap();
+        assert_eq!(client.auth_token(), Some(""));
+        let headers = client.build_headers(0, None).unwrap();
+        assert_eq!(
+            headers.get("authorization").and_then(|v| v.to_str().ok()),
+            Some("Bearer")
+        );
+    }
+
+    /// TS explicit `apiKey: null` / `authToken: null` skip the default
+    /// parameter, so the environment is never read.
+    #[test]
+    fn null_credentials_do_not_read_env() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "null_credentials_do_not_read_env",
+            &[
+                ("ANTHROPIC_API_KEY", "env-key"),
+                ("ANTHROPIC_AUTH_TOKEN", "env-token"),
+            ],
+        ) {
+            return;
+        }
+        let client = Anthropic::new(ClientOptions {
+            api_key: Nullable::Null,
+            auth_token: Nullable::Null,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(client.api_key(), None);
+        assert_eq!(client.auth_token(), None);
+        assert!(client.build_headers(0, None).is_err());
+    }
+
+    /// TS `baseURL = readEnv(..)` is a default parameter: an explicit `''`
+    /// skips it, then `'' || default` takes the default.
+    #[test]
+    fn explicit_empty_base_url_takes_default_without_reading_env() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "explicit_empty_base_url_takes_default_without_reading_env",
+            &[("ANTHROPIC_BASE_URL", "https://env.example.com")],
+        ) {
+            return;
+        }
+        let client = Anthropic::new(ClientOptions {
+            base_url: Some(String::new()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(client.base_url(), DEFAULT_BASE_URL);
+    }
+
+    /// TS `withOptions` passes the parent's resolved `apiKey`/`authToken`, so
+    /// a child reads no environment variable; an override still wins.
+    #[test]
+    fn with_options_inherits_resolved_credentials_without_reading_env() {
+        if crate::child_env::run_in_child_env(
+            module_path!(),
+            "with_options_inherits_resolved_credentials_without_reading_env",
+            &[
+                ("ANTHROPIC_API_KEY", "env-key"),
+                ("ANTHROPIC_AUTH_TOKEN", "env-token"),
+            ],
+        ) {
+            return;
+        }
+        let parent = Anthropic::new(ClientOptions {
+            api_key: Nullable::Null,
+            auth_token: "parent-token".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let child = parent.with_options(ClientOptions::default()).unwrap();
+        assert_eq!(child.api_key(), None);
+        assert_eq!(child.auth_token(), Some("parent-token"));
+
+        let overridden = parent
+            .with_options(ClientOptions {
+                api_key: "child-key".into(),
+                auth_token: Nullable::Null,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(overridden.api_key(), Some("child-key"));
+        assert_eq!(overridden.auth_token(), None);
+    }
+
+    /// TS appends every header layer to a WHATWG `Headers`, which strips
+    /// leading and trailing HTTP whitespace; a whitespace-only key becomes
+    /// `''` and is rejected.
+    #[test]
+    fn header_values_are_trimmed_like_whatwg_headers() {
+        let mut default_headers = HashMap::new();
+        default_headers.insert("x-custom".to_owned(), Some(" value\t".to_owned()));
+        let client = Anthropic::new(ClientOptions {
+            api_key: " key ".into(),
+            default_headers: Some(default_headers),
+            ..Default::default()
+        })
+        .unwrap();
+        let headers = client.build_headers(0, None).unwrap();
+        assert_eq!(headers.get("x-custom").unwrap(), "value");
+        assert_eq!(headers.get("x-api-key").unwrap(), "key");
+
+        let blank = Anthropic::new(ClientOptions {
+            api_key: " \t ".into(),
+            auth_token: Nullable::Null,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(blank.build_headers(0, None).is_err());
+    }
+
+    #[test]
+    fn client_options_debug_redacts_credentials() {
+        let options = ClientOptions {
+            api_key: "sk-secret".into(),
+            auth_token: Nullable::Null,
+            ..Default::default()
+        };
+        let debug = format!("{options:?}");
+        assert!(!debug.contains("sk-secret"), "{debug}");
+        assert!(debug.contains("api_key: Set(***)"), "{debug}");
+        assert!(debug.contains("auth_token: Null"), "{debug}");
+        assert!(format!("{:?}", ClientOptions::default()).contains("api_key: Unset"));
+    }
+
+    #[test]
+    fn nullable_resolve_applies_the_default_only_when_unset() {
+        let default = || Some("default".to_owned());
+        assert_eq!(Nullable::Unset.resolve(default), Some("default".to_owned()));
+        assert_eq!(Nullable::<String>::Null.resolve(default), None);
+        assert_eq!(Nullable::from("v").resolve(default), Some("v".to_owned()));
+        assert_eq!(Nullable::from_resolved(None::<String>), Nullable::Null);
+        assert_eq!(Nullable::from_resolved(Some(1)), Nullable::Set(1));
     }
 
     // -- retry-after header tests --

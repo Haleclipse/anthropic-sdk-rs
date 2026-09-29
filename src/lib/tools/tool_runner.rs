@@ -1082,7 +1082,7 @@ mod tests {
     /// Helper: build an `Anthropic` client pointing at the given base URL.
     fn make_client(base_url: &str) -> Anthropic {
         Anthropic::new(ClientOptions {
-            api_key: Some("test-key".to_string()),
+            api_key: "test-key".into(),
             base_url: Some(base_url.to_string()),
             max_retries: Some(0),
             ..Default::default()
