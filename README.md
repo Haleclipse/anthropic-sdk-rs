@@ -39,6 +39,20 @@ Example files:
 
 This is an intentional semantic equivalent, not a byte-for-byte API clone of Zod's JavaScript runtime behavior.
 
+## TLS and proxies
+
+The TypeScript SDK leaves TLS and proxies to the runtime's `fetch`. Here the application decides; none of these crates turns on reqwest's default features.
+
+- **Crypto provider.** On every target except Android, reqwest is built with `rustls-no-provider`, so the application installs a rustls crypto provider once, before building a client. Otherwise `Anthropic::new` panics inside reqwest with "No rustls crypto provider is configured". Pick one provider for the whole binary, which keeps ring and aws-lc-rs from both being linked:
+
+  ```rust
+  rustls::crypto::ring::default_provider().install_default().expect("install rustls provider");
+  ```
+
+  Android uses `native-tls` (OpenSSL) and needs no provider.
+- **Proxies.** reqwest reads `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` (either case). It does not read the macOS/Windows proxy settings unless the application enables `reqwest/system-proxy`. For full control, pass your own client as `ClientOptions::http_client`.
+- **HTTP version.** Without reqwest's `http2` feature, requests use HTTP/1.1, as Node's `fetch` does by default. Enable `reqwest/http2` in the application to negotiate h2.
+
 ## Validation
 
 The expected validation gate for parity work is:

@@ -8,7 +8,9 @@ repository = "https://github.com/Haleclipse/anthropic-sdk-rs"
 
 [dependencies]
 anthropic-sdk = { path = "../.." }
-reqwest = { version = "0.13", features = ["json", "stream"] }
+# No default features: the TLS backend and proxy sources are the core
+# crate's and the application's choice (see the root Cargo.toml).
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros"] }
@@ -29,3 +31,7 @@ aws-credential-types = "1.2.14"
 tokio = { version = "1", features = ["full"] }
 pretty_assertions = "1"
 wiremock = "0.6"
+
+# See the root Cargo.toml: tests build with reqwest's own crypto provider.
+[target.'cfg(not(target_os = "android"))'.dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }

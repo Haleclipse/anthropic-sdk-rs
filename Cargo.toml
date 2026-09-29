@@ -36,6 +36,11 @@ schemars = "1"
 # binary can install ring (or another provider) once. Avoids Cargo feature
 # union pulling BOTH ring and aws-lc-sys when the host app already depends
 # on rustls+ring (Cometix: CryptoProvider::install_default in main.rs).
+# Without default features reqwest reads the proxy environment variables
+# but not the OS proxy settings (`system-proxy`), and speaks HTTP/1.1 only
+# (`http2`). As in TS, which leaves both to the runtime's fetch, these are
+# the application's call. No crate in this workspace turns reqwest's
+# default features on. See README § TLS and proxies.
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "multipart", "native-tls"] }
 
@@ -46,6 +51,12 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "str
 tokio = { version = "1", features = ["full"] }
 wiremock = "0.6"
 pretty_assertions = "1"
+
+# Tests and examples do not install a provider, so they build with
+# reqwest's own (aws-lc-rs). Dev-dependency features never reach a
+# dependent's build.
+[target.'cfg(not(target_os = "android"))'.dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 
 # ── Examples ─────────────────────────────────────────────────────────────
 

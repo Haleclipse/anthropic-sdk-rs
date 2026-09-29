@@ -3,6 +3,19 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Provider crates leave the transport to the application (2026-09-29)
+
+- The Bedrock, Vertex and Foundry crates depended on `reqwest` with its default features. Cargo unifies features, so any build containing one of them turned those features on for every `reqwest` client in the graph, the core's included:
+  - `system-proxy`: fill the HTTP and HTTPS proxy slots left empty by the environment from the macOS/Windows proxy settings. The core client's proxy sources depended on whether a provider crate was present.
+  - `default-tls`: rustls with the aws-lc-rs provider, which the root crate's `rustls-no-provider` exists to keep out of the host's graph.
+  - `http2`: ALPN offered h2. Requests now use HTTP/1.1, as Node's `fetch` does by default.
+  - `charset`: no effect here. Response bodies are read as bytes and decoded as UTF-8.
+- All three crates now turn the default features off, as the root crate does. TS leaves proxies and TLS to the runtime's `fetch`. Here that choice is the application's: reqwest still reads `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY`, and an application that wants the OS proxy settings enables `reqwest/system-proxy` itself. README § TLS and proxies documents both.
+- **Breaking:** an application that depends only on a provider crate must now install a rustls crypto provider before building a client, as core-only applications already had to; `Anthropic::new` otherwise panics inside reqwest. Before, the provider crate's `default-tls` supplied aws-lc-rs. Crate versions follow the TS packages and are unchanged.
+- Tests and examples do not install a provider. Each workspace crate therefore takes reqwest's own `rustls` (aws-lc-rs) as a non-Android dev-dependency, which never reaches a dependent's build. Each crate's tests now also pass on their own (`cargo test -p <crate>`); before, the root crate's panicked without a provider.
+- Bedrock still reaches aws-lc-rs through `aws-config`'s built-in HTTPS client; that dependency is Bedrock's credential chain, not reqwest.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets` — passed (707 tests). Per crate: 619 + 39 + 24 + 25.
+
 ## Three-state credentials (2026-09-29)
 
 - `ClientOptions.api_key`/`auth_token` are `Nullable<String>` (`Unset` / `Null` / `Set`), TS `string | null | undefined`. Only `Unset` takes the TS default parameter (`readEnv(..) ?? null`); an explicit `Null` never consults the environment. `Nullable` is exported from the crate root with `From<T>`/`From<&str>`, `from_resolved` (`None` → `Null`) and `resolve`. **Breaking:** `Some(key)` becomes `key.into()`; `None` becomes `Nullable::Unset` (keeps the env fallback) or `Nullable::Null`.
