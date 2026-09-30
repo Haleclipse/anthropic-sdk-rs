@@ -83,6 +83,15 @@ fn base_url_uses_region_or_explicit_override() {
 
 #[test]
 fn core_options_are_preserved_like_ts_provider_extends_core_client_options() {
+    // The core reads ANTHROPIC_API_KEY for Vertex, so the host's must not
+    // decide the `x-api-key` assertion below.
+    if child_env::run_in_child_env(
+        module_path!(),
+        "core_options_are_preserved_like_ts_provider_extends_core_client_options",
+        &[],
+    ) {
+        return;
+    }
     let mut default_headers = std::collections::HashMap::new();
     default_headers.insert("x-vertex-default".to_owned(), Some("yes".to_owned()));
     let mut default_query = std::collections::HashMap::new();
@@ -751,12 +760,14 @@ async fn beta_messages_tool_runner_uses_raw_predict_path() {
 
 /// TS `AnthropicVertex` always puts the GCP `Authorization` last
 /// (`client.ts:109-131`), so an ambient Anthropic token never reaches
-/// Google; without an access token or provider this port sends none.
+/// Google; without an access token or provider this port sends none. The
+/// ambient key keeps the core default and is sent, as in TS and Go, and
+/// `validateHeaders() {}` lets the request through without either.
 #[test]
-fn ambient_anthropic_credentials_are_never_sent_to_vertex() {
+fn ambient_anthropic_token_never_reaches_vertex_but_the_key_does_like_ts() {
     if child_env::run_in_child_env(
         module_path!(),
-        "ambient_anthropic_credentials_are_never_sent_to_vertex",
+        "ambient_anthropic_token_never_reaches_vertex_but_the_key_does_like_ts",
         &[
             ("ANTHROPIC_API_KEY", "ambient-key"),
             ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
@@ -769,15 +780,44 @@ fn ambient_anthropic_credentials_are_never_sent_to_vertex() {
     let client = create_client(&cfg).unwrap();
     let headers = client.build_headers(0, None).unwrap();
     assert!(headers.get("authorization").is_none(), "{headers:?}");
-    assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+    assert_eq!(headers.get("x-api-key").unwrap(), "ambient-key");
 }
 
-#[tokio::test]
-async fn access_token_sets_bearer_auth_and_disables_anthropic_api_key() {
+#[test]
+fn vertex_without_credentials_is_not_rejected_like_ts_validate_headers() {
     if child_env::run_in_child_env(
         module_path!(),
-        "access_token_sets_bearer_auth_and_disables_anthropic_api_key",
-        &[("ANTHROPIC_API_KEY", "ambient-key-should-not-leak")],
+        "vertex_without_credentials_is_not_rejected_like_ts_validate_headers",
+        &[],
+    ) {
+        return;
+    }
+    let mut cfg = vertex_config("my-project", "us-east5");
+    cfg.access_token = None;
+    let client = create_client(&cfg).unwrap();
+    let headers = client.build_headers(0, None).unwrap();
+    assert!(headers.get("authorization").is_none(), "{headers:?}");
+    assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+
+    // A `withOptions` child is still an `AnthropicVertex` in TS.
+    let child = client
+        .with_options(CoreClientOptions {
+            max_retries: Some(1),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(child.build_headers(0, None).is_ok());
+}
+
+/// The ambient key is sent as in TS and Go. The Bearer from `access_token`
+/// is this port's own: TS v0.74.0 stores `accessToken` but authenticates
+/// only through its auth client.
+#[tokio::test]
+async fn access_token_sets_bearer_auth_and_the_ambient_key_is_sent() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "access_token_sets_bearer_auth_and_the_ambient_key_is_sent",
+        &[("ANTHROPIC_API_KEY", "ambient-key")],
     ) {
         return;
     }
@@ -801,7 +841,8 @@ async fn access_token_sets_bearer_auth_and_disables_anthropic_api_key() {
         requests[0].headers.get("authorization").unwrap(),
         "Bearer vertex-token"
     );
-    assert!(requests[0].headers.get("x-api-key").is_none());
+    // TS and Go send the ambient key to Google too (core `apiKeyAuth`).
+    assert_eq!(requests[0].headers.get("x-api-key").unwrap(), "ambient-key");
 }
 
 struct CountingTokenProvider {
@@ -832,6 +873,15 @@ impl TokenProvider for ProjectResolvingTokenProvider {
 
 #[tokio::test]
 async fn token_provider_project_id_resolves_missing_project_like_ts_auth_client() {
+    // The core reads ANTHROPIC_API_KEY for Vertex, so the host's must not
+    // decide the `x-api-key` assertion below.
+    if child_env::run_in_child_env(
+        module_path!(),
+        "token_provider_project_id_resolves_missing_project_like_ts_auth_client",
+        &[],
+    ) {
+        return;
+    }
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/projects/resolved-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-20250514:rawPredict"))

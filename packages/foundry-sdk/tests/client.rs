@@ -498,6 +498,36 @@ impl TokenProvider for DummyTokenProvider {
     }
 }
 
+/// TS `apiKey: azureADTokenProvider ?? apiKey` plus the `authHeaders`
+/// override: in token mode only the Bearer token is sent, even when an empty
+/// key (falsy, so accepted beside the provider) was passed too.
+#[tokio::test]
+async fn token_mode_sends_no_x_api_key_even_with_an_empty_key_like_ts() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/test"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = create_client(FoundryConfig {
+        resource: String::new(),
+        api_key: Some(String::new()),
+        token_provider: Some(Box::new(DummyTokenProvider)),
+        base_url: Some(server.uri()),
+    })
+    .unwrap();
+    let _: Value = client.get("/v1/test", None, None).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests[0].headers.get("x-api-key").is_none());
+    assert_eq!(
+        requests[0].headers.get("authorization").unwrap(),
+        "Bearer test-token"
+    );
+}
+
 #[test]
 fn create_client_with_token_provider() {
     let config = FoundryConfig {

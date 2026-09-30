@@ -3,6 +3,32 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Provider clients skip core auth validation, as TS's `validateHeaders() {}` (2026-09-30)
+
+- The TS Bedrock, Vertex and Foundry clients override `validateHeaders()` with a no-op (`client.ts:86-88`, `:118-120`, `:133-135`): their own signing or token logic authenticates.
+  - Bedrock got past core validation by setting `x-api-key: None` in its default headers, so its key was never sent.
+  - Vertex set the same to keep the ambient key from reaching Google, which TS does not do.
+  - Foundry set it in token mode.
+- New core option `ClientOptions::skip_auth_validation` is the Rust form of that override. With it set, a request without `X-Api-Key` or `Authorization` is sent instead of rejected. Children from `with_options` inherit it, as a TS `withOptions` child is an instance of the same subclass. All three providers set it and no longer null `x-api-key`.
+- **Bedrock and Vertex now send the ambient `ANTHROPIC_API_KEY` as `x-api-key`, as TS, Go and Claude Code do.** Neither passes a key to the core constructor. Go's `DefaultClientOptions` reads the variable just as TS's core does, and Claude Code passes no `apiKey` for either provider. This hands a first-party key to AWS or Google; both official SDKs do it (ENV_REDESIGN Q3: copy, with a comment at each site). This supersedes the earlier "ambient Anthropic API keys do not leak into provider requests" for Vertex.
+- **Token on Bedrock.** Under `skip_auth`, the ambient `ANTHROPIC_AUTH_TOKEN` is sent as `Authorization: Bearer`, as in TS. With SigV4, the signature's `Authorization` replaces it, as in Go.
+  - **Known difference from TS, not ported:** TS merges the request headers after the signature (`buildHeaders([signed, request.headers])`, `client.ts:113`). So there the token overwrites SigV4, and the request fails AWS auth. Claude Code puts that token into `defaultHeaders` for every third-party provider, so it hits this whenever a token is set.
+  - Rust's SigV4 signs `host` and the `x-amz-*` headers only; TS and Go also sign `x-api-key`. AWS does not require it.
+- **Token on Vertex.** `auth_token` stays `Null` unless an access token is given. TS sends the GCP `Authorization` from `prepareOptions`, so an ambient token never reaches Google through the SDK's own environment read.
+  - **Known difference, pre-existing, left for ENV S6:** TS merges the GCP headers into the request options, after `defaultHeaders`. Rust puts them in the core auth layer, where `default_headers` override them.
+- **Foundry** sends only its key, or its token provider's token, as TS's `authHeaders` override does.
+  - In token mode the key is now always `Null`. Before, an empty key passed beside the provider (falsy, so accepted) was sent as an empty `x-api-key` once the header was no longer nulled.
+  - One wire change, towards TS: a whitespace-only Foundry key used to be rejected by core validation. It is now sent, trimmed to empty, as TS sends it.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets`: 719 passed.
+  - Two Vertex tests asserted the old withholding. They now assert TS's behaviour.
+  - New tests:
+    - the core flag and its inheritance;
+    - Bedrock's ambient key next to SigV4, under `skip_auth`, and with no credentials at all;
+    - a Vertex client with no credentials, and its `with_options` child;
+    - Foundry token mode with an empty key.
+  - Three parent-process provider tests that assert no `x-api-key` now run in an exact child environment, so a host `ANTHROPIC_API_KEY` cannot fail them.
+  - Removing the flag's check fails 17 tests: 15 Bedrock, 1 Vertex, 1 core.
+
 ## Bedrock loads the AWS credential chain once per client (2026-09-30)
 
 TS resolves credentials on every request: `getAuthHeaders` builds a new `fromNodeProviderChain` each time and passes explicit keys to it by rewriting `process.env` around the call (`withTempEnv`). Until now the Rust port likewise ran `aws_config::defaults().load()` for every request. `withTempEnv` cannot be ported (writing the environment is `unsafe` since edition 2024 and races with other threads), so Bedrock follows Go instead, where `LoadDefaultConfig` loads once and wraps the chain in `aws.CredentialsCache`.

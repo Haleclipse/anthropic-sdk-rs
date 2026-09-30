@@ -4,7 +4,6 @@
 // `base_url` points at the Azure AI Services Anthropic endpoint and supports
 // both static API-key and dynamic token-provider authentication.
 
-use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -339,29 +338,24 @@ pub fn create_client_with_core_options(
         .token_provider
         .map(|inner| Arc::new(FoundryTokenProviderAdapter { inner }) as Arc<dyn AuthTokenProvider>);
 
-    let mut default_headers = HashMap::new();
-    if auth_token_provider.is_some() {
-        // Prevent the core client from picking up an ambient ANTHROPIC_API_KEY
-        // when Foundry is using Azure AD bearer-token auth.
-        default_headers.insert("x-api-key".to_owned(), None);
-    }
-    if let Some(user_headers) = core_options.default_headers.take() {
-        default_headers.extend(user_headers);
-    }
-
     core_options.base_url = Some(url);
     // TS `AnthropicFoundry` passes `apiKey: azureADTokenProvider ?? apiKey`
-    // and overrides `authHeaders` (`client.ts:96,103-131`): only the Foundry
-    // key or the provider's token is ever sent, never `ANTHROPIC_API_KEY` or
-    // `ANTHROPIC_AUTH_TOKEN`.
-    core_options.api_key = Nullable::from_resolved(config.api_key);
+    // and overrides `authHeaders` (`client.ts:96,103-131`): with a token
+    // provider only its Bearer token is sent, otherwise only the Foundry key,
+    // and never `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`. So the token is
+    // always `Null`, and so is the key in token mode, where `validate_auth`
+    // lets an empty key through beside the provider.
+    core_options.api_key = if auth_token_provider.is_some() {
+        Nullable::Null
+    } else {
+        Nullable::from_resolved(config.api_key)
+    };
     core_options.auth_token = Nullable::Null;
     core_options.auth_token_provider = auth_token_provider;
-    core_options.default_headers = if default_headers.is_empty() {
-        None
-    } else {
-        Some(default_headers)
-    };
+    // TS `validateHeaders() {}` (`client.ts:133-135`). `validate_auth` above
+    // already requires the key or the token provider, as the TS constructor
+    // does.
+    core_options.skip_auth_validation = true;
 
     Anthropic::new(core_options)
 }

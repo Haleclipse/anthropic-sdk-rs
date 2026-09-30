@@ -36,6 +36,8 @@ The Rust workspace matches the official provider package versions and implements
 - Stable messages, legacy completions, and beta messages rewrite to `invoke` or `invoke-with-response-stream`.
 - `model` and `stream` are removed from rewritten bodies; `anthropic_version` and header-derived `anthropic_beta` are inserted with TypeScript truthiness/override behavior.
 - Static credentials, a custom async provider, and the AWS SDK for Rust default provider chain feed SigV4 signing.
+- An ambient `ANTHROPIC_API_KEY` is sent as `x-api-key` next to SigV4, as in TS and Go.
+- An ambient `ANTHROPIC_AUTH_TOKEN` is sent as `Authorization` under `skip_auth`, as in TS. With SigV4, the signature replaces it, as in Go. TS lets the token overwrite the signature (see PARITY_REPORT).
 - Final request method, URL, query, and body are signed; inherited beta resource requests are also signed through provider middleware.
 - AWS EventStream chunk/exception decoding, split frames, unknown events, prelude/message CRC validation, and the lower-level `AWS_restJson1` compatibility surface are covered.
 - Unsupported stable/beta message batch and token-counting methods are absent from the narrowed provider wrappers.
@@ -46,7 +48,10 @@ The Rust workspace matches the official provider package versions and implements
 - Stable/beta messages route to `rawPredict` and streaming calls route to `streamRawPredict`.
 - Stable/beta token counting routes to `count-tokens:rawPredict`, including official custom-path/method override behavior.
 - `anthropic_version`, stream flags, beta headers, request body overrides, and custom-path bypass behavior are covered.
-- Static access tokens and dynamic token providers produce bearer auth without leaking ambient Anthropic API keys.
+- Static access tokens and dynamic token providers produce bearer auth.
+- The SDK's own environment read never sends `ANTHROPIC_AUTH_TOKEN` to Google.
+- An ambient `ANTHROPIC_API_KEY` is sent as `x-api-key`, as TS and Go send it.
+- Caller `default_headers` still override the GCP `Authorization`; in TS the GCP headers win (see PARITY_REPORT).
 - Project IDs can be supplied explicitly or resolved by the Rust token-provider abstraction.
 - Stable/beta message batches are absent from the narrowed provider wrappers.
 

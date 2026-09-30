@@ -368,6 +368,15 @@ async fn request_rejects_empty_region_like_official_prepare_request() {
 
 #[test]
 fn core_options_are_preserved_like_ts_provider_extends_core_client_options() {
+    // The core reads ANTHROPIC_API_KEY for Bedrock, so the host's must not
+    // decide the `x-api-key` assertion below.
+    if child_env::run_in_child_env(
+        module_path!(),
+        "core_options_are_preserved_like_ts_provider_extends_core_client_options",
+        &[],
+    ) {
+        return;
+    }
     let mut default_headers = std::collections::HashMap::new();
     default_headers.insert("x-bedrock-default".to_owned(), Some("yes".to_owned()));
     let mut default_query = std::collections::HashMap::new();
@@ -454,6 +463,98 @@ async fn inherited_beta_resources_are_sigv4_signed_like_official_prepare_request
         .unwrap();
     assert!(authorization.starts_with("AWS4-HMAC-SHA256 "));
     assert!(requests[0].headers.get("x-amz-date").is_some());
+}
+
+/// TS `AnthropicBedrock` passes neither credential to `super`, so the core
+/// sends the ambient key next to the SigV4 headers, as in TS and Go. SigV4's
+/// `Authorization` replaces the ambient token as in Go. TS merges the request
+/// headers after the signature (`client.ts:113`), so there the token
+/// overwrites SigV4 and the request fails AWS auth; that is not ported.
+#[tokio::test]
+async fn ambient_key_is_sent_next_to_sigv4_and_sigv4_replaces_the_token_like_go() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "ambient_key_is_sent_next_to_sigv4_and_sigv4_replaces_the_token_like_go",
+        &[
+            ("ANTHROPIC_API_KEY", "ambient-key"),
+            ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
+        ],
+    ) {
+        return;
+    }
+    let server = MockServer::start().await;
+    mount_invoke(&server, 1).await;
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.aws_access_key = Some("AKIDEXAMPLE".to_owned());
+    cfg.aws_secret_key = Some("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".to_owned());
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    client.messages().create(&hello_message()).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests[0].headers.get("x-api-key").unwrap(), "ambient-key");
+    assert!(requests[0]
+        .headers
+        .get("authorization")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("AWS4-HMAC-SHA256 "));
+}
+
+/// `validateHeaders() {}`: under `skipAuth` TS sends a request with no auth
+/// header at all.
+#[tokio::test]
+async fn skip_auth_without_credentials_is_sent_like_ts() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "skip_auth_without_credentials_is_sent_like_ts",
+        &[],
+    ) {
+        return;
+    }
+    let server = MockServer::start().await;
+    mount_invoke(&server, 1).await;
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    client.messages().create(&hello_message()).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests[0].headers.get("x-api-key").is_none());
+    assert!(requests[0].headers.get("authorization").is_none());
+}
+
+/// Under `skipAuth` TS sends the core's ambient credentials unchanged.
+#[tokio::test]
+async fn skip_auth_sends_the_ambient_anthropic_credentials_like_ts() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "skip_auth_sends_the_ambient_anthropic_credentials_like_ts",
+        &[
+            ("ANTHROPIC_API_KEY", "ambient-key"),
+            ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
+        ],
+    ) {
+        return;
+    }
+    let server = MockServer::start().await;
+    mount_invoke(&server, 1).await;
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    let client = AnthropicBedrock::new(cfg).unwrap();
+
+    client.messages().create(&hello_message()).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests[0].headers.get("x-api-key").unwrap(), "ambient-key");
+    assert_eq!(
+        requests[0].headers.get("authorization").unwrap(),
+        "Bearer ambient-token"
+    );
 }
 
 #[tokio::test]

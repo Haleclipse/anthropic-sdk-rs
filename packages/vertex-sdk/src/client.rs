@@ -321,30 +321,22 @@ pub fn create_client_with_core_options(
         }) as Arc<dyn AuthTokenProvider>
     });
 
-    // Vertex never uses Anthropic `x-api-key` auth. Explicitly omit it so an
-    // ambient ANTHROPIC_API_KEY cannot leak into Vertex requests. Caller
-    // default headers are merged afterwards, matching TS defaultHeaders behavior
-    // for provider clients.
-    let mut default_headers = HashMap::new();
-    default_headers.insert("x-api-key".to_owned(), None);
-    if let Some(user_headers) = core_options.default_headers.take() {
-        default_headers.extend(user_headers);
-    }
-
     core_options.base_url = Some(base_url);
     // TS `AnthropicVertex` passes neither to `super`, but always adds the GCP
     // `Authorization` as the last header layer (`client.ts:109-131`), so an
     // ambient `ANTHROPIC_AUTH_TOKEN` never reaches Google. This port has no
     // default GCP auth, so the equivalent is an explicit `Null` unless an
-    // `access_token` is given. The API key keeps the core default; its header
-    // is omitted above.
+    // `access_token` is given. The key keeps the core default and is sent as
+    // `x-api-key`, as TS and Go (`DefaultClientOptions`) do: that hands a
+    // first-party key to Google; both official SDKs do it.
     core_options.api_key = Nullable::Unset;
     core_options.auth_token = match &config.access_token {
         Some(token) => Nullable::Set(token.clone()),
         None => Nullable::Null,
     };
     core_options.auth_token_provider = auth_token_provider;
-    core_options.default_headers = Some(default_headers);
+    // TS `validateHeaders() {}` (`client.ts:118-120`): GCP auth authenticates.
+    core_options.skip_auth_validation = true;
 
     Anthropic::new(core_options)
 }

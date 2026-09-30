@@ -508,26 +508,21 @@ fn build_bedrock_client(
         ),
     };
 
-    // Bedrock uses SigV4 rather than Anthropic API-key auth. Omit x-api-key so
-    // the core client doesn't reject requests before provider auth is applied.
-    // Caller default headers are merged afterwards, matching TS defaultHeaders
-    // behavior for provider clients.
-    let mut default_headers = HashMap::new();
-    default_headers.insert("x-api-key".to_owned(), None);
-    if let Some(user_headers) = core_options.default_headers.take() {
-        default_headers.extend(user_headers);
-    }
-
     core_options.base_url = Some(base_url);
     // TS `AnthropicBedrock` passes neither to `super`, so the core defaults
-    // (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) still apply. On the wire
-    // this port differs for the key: TS sends it (inside the SigV4
-    // signature), while its header is omitted above. The token matches TS
-    // under `skip_auth`; SigV4 replaces it otherwise.
+    // (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) still apply and are sent.
+    // - The key goes out as `x-api-key` next to the SigV4 headers, as in TS
+    //   and Go (`DefaultClientOptions`). That hands a first-party key to AWS;
+    //   both official SDKs do it.
+    // - The token goes out as `Authorization` under `skip_auth`, as in TS.
+    //   Otherwise SigV4 replaces it, as in Go. TS merges the request headers
+    //   after the signature (`client.ts:113`), so there the token overwrites
+    //   SigV4 and the request fails AWS auth; that is not ported.
     core_options.api_key = Nullable::Unset;
     core_options.auth_token = Nullable::Unset;
     core_options.auth_token_provider = None;
-    core_options.default_headers = Some(default_headers);
+    // TS `validateHeaders() {}` (`client.ts:86-88`): SigV4 authenticates.
+    core_options.skip_auth_validation = true;
     // The official provider signs every request in prepareRequest(), including
     // inherited beta resources. Wrapper message/completion calls already carry
     // a SigV4 header and are left unchanged by this final middleware; inherited

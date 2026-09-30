@@ -253,6 +253,14 @@ pub struct ClientOptions {
     /// `azureADTokenProvider` and Vertex auth-client token refresh.
     pub auth_token_provider: Option<Arc<dyn AuthTokenProvider>>,
 
+    /// Send requests without an `X-Api-Key` or `Authorization` header instead
+    /// of rejecting them. For provider clients whose own signing or token
+    /// logic authenticates: the Rust form of the TS Bedrock, Vertex and
+    /// Foundry clients overriding `validateHeaders()` with a no-op. Child
+    /// clients from [`Anthropic::with_options`] inherit it, as a TS
+    /// `withOptions` child is an instance of the same subclass.
+    pub skip_auth_validation: bool,
+
     /// Override the default base URL for the API.
     /// Omitted: `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com`.
     /// `Some("")`: the default, without reading the environment (TS `''` or
@@ -326,6 +334,7 @@ impl fmt::Debug for ClientOptions {
                     .as_ref()
                     .map(|_| "<dyn AuthTokenProvider>"),
             )
+            .field("skip_auth_validation", &self.skip_auth_validation)
             .field("base_url", &self.base_url)
             .field("timeout", &self.timeout)
             .field("max_retries", &self.max_retries)
@@ -360,6 +369,7 @@ pub struct Anthropic {
     api_key: Option<String>,
     auth_token: Option<String>,
     auth_token_provider: Option<Arc<dyn AuthTokenProvider>>,
+    skip_auth_validation: bool,
     base_url: String,
     timeout_ms: u64,
     max_retries: u32,
@@ -406,6 +416,7 @@ impl fmt::Debug for Anthropic {
                     .as_ref()
                     .map(|_| "<dyn AuthTokenProvider>"),
             )
+            .field("skip_auth_validation", &self.skip_auth_validation)
             .field("base_url", &self.base_url)
             .field("timeout_ms", &self.timeout_ms)
             .field("max_retries", &self.max_retries)
@@ -496,6 +507,7 @@ impl Anthropic {
             api_key,
             auth_token,
             auth_token_provider,
+            skip_auth_validation: opts.skip_auth_validation,
             base_url,
             timeout_ms,
             max_retries,
@@ -531,6 +543,7 @@ impl Anthropic {
             auth_token_provider: overrides
                 .auth_token_provider
                 .or_else(|| self.auth_token_provider.clone()),
+            skip_auth_validation: self.skip_auth_validation || overrides.skip_auth_validation,
             base_url: overrides.base_url.or_else(|| Some(self.base_url.clone())),
             timeout: overrides.timeout.or(Some(self.timeout_ms)),
             max_retries: overrides.max_retries.or(Some(self.max_retries)),
@@ -945,7 +958,8 @@ impl Anthropic {
                 .and_then(|v| v.as_deref())
                 .is_some_and(|v| !v.is_empty())
         };
-        if !has_value("x-api-key")
+        if !self.skip_auth_validation
+            && !has_value("x-api-key")
             && !has_value("authorization")
             && self.auth_token_provider.is_none()
         {
@@ -3572,6 +3586,30 @@ mod tests {
         let result = client.build_headers(0, None);
         let err = result.unwrap_err();
         assert!(err.to_string().contains("apiKey or authToken"));
+    }
+
+    /// TS provider clients override `validateHeaders()` with a no-op, and a
+    /// `withOptions` child is an instance of the same subclass.
+    #[test]
+    fn skip_auth_validation_sends_no_auth_and_is_inherited_by_children() {
+        let client = Anthropic::new(ClientOptions {
+            api_key: Nullable::Null,
+            auth_token: Nullable::Null,
+            skip_auth_validation: true,
+            ..Default::default()
+        })
+        .unwrap();
+        let headers = client.build_headers(0, None).unwrap();
+        assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+        assert!(headers.get("authorization").is_none(), "{headers:?}");
+
+        let child = client
+            .with_options(ClientOptions {
+                max_retries: Some(1),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(child.build_headers(0, None).is_ok());
     }
 
     #[test]
