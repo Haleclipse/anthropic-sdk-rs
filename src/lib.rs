@@ -22,8 +22,8 @@ pub mod sdk_lib;
 mod child_env;
 
 pub use client::{
-    Anthropic, AuthTokenProvider, BaseAnthropic, ClientOptions, LogLevel, Nullable, SdkLogger,
-    AI_PROMPT, HUMAN_PROMPT,
+    Anthropic, AuthTokenProvider, BaseAnthropic, ClientOptions, LogLevel, Nullable,
+    RequestHeadersProvider, SdkLogger, AI_PROMPT, HUMAN_PROMPT,
 };
 pub use core::api_promise::{APIPromise, ApiPromise, PagePromise};
 pub use core::error::{

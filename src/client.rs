@@ -60,6 +60,32 @@ pub trait AuthTokenProvider: Send + Sync {
     fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>>;
 }
 
+/// Async headers a provider adds to every request attempt, after the client's
+/// default headers and before the request's own.
+///
+/// This is the Rust form of a TS provider overriding `prepareOptions()` to
+/// prepend headers. Vertex does this with
+/// `options.headers = buildHeaders([authHeaders, options.headers])`, so
+/// Google's `Authorization` wins over `defaultHeaders`. [`AuthTokenProvider`]
+/// instead sits in the auth layer (TS `authHeaders()`), under the default
+/// headers.
+pub trait RequestHeadersProvider: Send + Sync {
+    /// Return the headers for the next request attempt.
+    fn request_headers(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<HashMap<String, String>, ApiError>>;
+}
+
+/// Headers the provider hooks resolved for one request attempt.
+#[derive(Default)]
+struct ProviderHeaders {
+    /// From `auth_token_provider`: the auth layer (TS `authHeaders()`).
+    auth: Option<HashMap<String, Option<String>>>,
+    /// From `request_headers_provider`: after the default headers, before the
+    /// request's own (TS `prepareOptions()`).
+    request: Option<HashMap<String, Option<String>>>,
+}
+
 /// SDK request logging levels.
 ///
 /// Maps to TS `LogLevel` (`off`, `error`, `warn`, `info`, `debug`).
@@ -253,6 +279,10 @@ pub struct ClientOptions {
     /// `azureADTokenProvider` and Vertex auth-client token refresh.
     pub auth_token_provider: Option<Arc<dyn AuthTokenProvider>>,
 
+    /// Async headers added to every request attempt after the default headers
+    /// and before the request's own; see [`RequestHeadersProvider`].
+    pub request_headers_provider: Option<Arc<dyn RequestHeadersProvider>>,
+
     /// Send requests without an `X-Api-Key` or `Authorization` header instead
     /// of rejecting them. For provider clients whose own signing or token
     /// logic authenticates: the Rust form of the TS Bedrock, Vertex and
@@ -334,6 +364,13 @@ impl fmt::Debug for ClientOptions {
                     .as_ref()
                     .map(|_| "<dyn AuthTokenProvider>"),
             )
+            .field(
+                "request_headers_provider",
+                &self
+                    .request_headers_provider
+                    .as_ref()
+                    .map(|_| "<dyn RequestHeadersProvider>"),
+            )
             .field("skip_auth_validation", &self.skip_auth_validation)
             .field("base_url", &self.base_url)
             .field("timeout", &self.timeout)
@@ -369,6 +406,7 @@ pub struct Anthropic {
     api_key: Option<String>,
     auth_token: Option<String>,
     auth_token_provider: Option<Arc<dyn AuthTokenProvider>>,
+    request_headers_provider: Option<Arc<dyn RequestHeadersProvider>>,
     skip_auth_validation: bool,
     base_url: String,
     timeout_ms: u64,
@@ -415,6 +453,13 @@ impl fmt::Debug for Anthropic {
                     .auth_token_provider
                     .as_ref()
                     .map(|_| "<dyn AuthTokenProvider>"),
+            )
+            .field(
+                "request_headers_provider",
+                &self
+                    .request_headers_provider
+                    .as_ref()
+                    .map(|_| "<dyn RequestHeadersProvider>"),
             )
             .field("skip_auth_validation", &self.skip_auth_validation)
             .field("base_url", &self.base_url)
@@ -507,6 +552,7 @@ impl Anthropic {
             api_key,
             auth_token,
             auth_token_provider,
+            request_headers_provider: opts.request_headers_provider.clone(),
             skip_auth_validation: opts.skip_auth_validation,
             base_url,
             timeout_ms,
@@ -543,6 +589,9 @@ impl Anthropic {
             auth_token_provider: overrides
                 .auth_token_provider
                 .or_else(|| self.auth_token_provider.clone()),
+            request_headers_provider: overrides
+                .request_headers_provider
+                .or_else(|| self.request_headers_provider.clone()),
             skip_auth_validation: self.skip_auth_validation || overrides.skip_auth_validation,
             base_url: overrides.base_url.or_else(|| Some(self.base_url.clone())),
             timeout: overrides.timeout.or(Some(self.timeout_ms)),
@@ -877,14 +926,19 @@ impl Anthropic {
         retry_count: u32,
         extra_headers: Option<&HashMap<String, Option<String>>>,
     ) -> Result<HeaderMap, ApiError> {
-        self.build_headers_with_timeout(retry_count, extra_headers, None, self.timeout_ms)
+        self.build_headers_with_timeout(
+            retry_count,
+            extra_headers,
+            &ProviderHeaders::default(),
+            self.timeout_ms,
+        )
     }
 
     fn build_headers_with_timeout(
         &self,
         retry_count: u32,
         extra_headers: Option<&HashMap<String, Option<String>>>,
-        dynamic_auth_headers: Option<&HashMap<String, Option<String>>>,
+        provider_headers: &ProviderHeaders,
         timeout_ms: u64,
     ) -> Result<HeaderMap, ApiError> {
         // Collect all layers into a single ordered map. We use lowercase keys
@@ -920,7 +974,7 @@ impl Anthropic {
         if let Some(ref token) = self.auth_token {
             map.insert("authorization".to_owned(), Some(format!("Bearer {token}")));
         }
-        if let Some(dynamic) = dynamic_auth_headers {
+        if let Some(dynamic) = &provider_headers.auth {
             for (k, v) in dynamic {
                 map.insert(k.to_lowercase(), v.clone());
             }
@@ -929,6 +983,14 @@ impl Anthropic {
         // Layer 3 -- default_headers from options
         for (k, v) in &self.default_headers {
             map.insert(k.to_lowercase(), v.clone());
+        }
+
+        // Layer 3.5 -- provider request headers (TS `prepareOptions()`
+        // prepending to the request's own headers).
+        if let Some(request) = &provider_headers.request {
+            for (k, v) in request {
+                map.insert(k.to_lowercase(), v.clone());
+            }
         }
 
         // Layer 4 -- per-request overrides
@@ -1587,11 +1649,11 @@ impl Anthropic {
                 merged_query.as_ref(),
                 options.and_then(|opts| opts.default_base_url.as_deref()),
             )?;
-            let dynamic_auth_headers = self.resolve_dynamic_auth_headers().await?;
+            let provider_headers = self.resolve_provider_headers().await?;
             let mut headers = self.build_headers_with_timeout(
                 retry_count,
                 merged_headers.as_ref().or(extra_headers),
-                dynamic_auth_headers.as_ref(),
+                &provider_headers,
                 timeout_ms,
             )?;
             let raw_body = options.and_then(|opts| opts.raw_body.as_ref()).cloned();
@@ -2389,23 +2451,34 @@ impl Anthropic {
         }
     }
 
-    async fn resolve_dynamic_auth_headers(
-        &self,
-    ) -> Result<Option<HashMap<String, Option<String>>>, ApiError> {
-        let Some(provider) = &self.auth_token_provider else {
-            return Ok(None);
+    async fn resolve_provider_headers(&self) -> Result<ProviderHeaders, ApiError> {
+        let auth = match &self.auth_token_provider {
+            Some(provider) => {
+                let token = provider.get_token().await?;
+                if token.trim().is_empty() {
+                    return Err(ApiError::Sdk(
+                        "Expected auth_token_provider to return a non-empty string".to_owned(),
+                    ));
+                }
+                Some(HashMap::from([(
+                    "authorization".to_owned(),
+                    Some(format!("Bearer {token}")),
+                )]))
+            }
+            None => None,
         };
-
-        let token = provider.get_token().await?;
-        if token.trim().is_empty() {
-            return Err(ApiError::Sdk(
-                "Expected auth_token_provider to return a non-empty string".to_owned(),
-            ));
-        }
-
-        let mut headers = HashMap::new();
-        headers.insert("authorization".to_owned(), Some(format!("Bearer {token}")));
-        Ok(Some(headers))
+        let request = match &self.request_headers_provider {
+            Some(provider) => Some(
+                provider
+                    .request_headers()
+                    .await?
+                    .into_iter()
+                    .map(|(name, value)| (name, Some(value)))
+                    .collect(),
+            ),
+            None => None,
+        };
+        Ok(ProviderHeaders { auth, request })
     }
 
     // ── Internal: single attempt ────────────────────────────────────────
@@ -2438,11 +2511,11 @@ impl Anthropic {
             options.and_then(|opts| opts.default_base_url.as_deref()),
         )?;
         let effective_body = effective_request_body(body, options)?;
-        let dynamic_auth_headers = self.resolve_dynamic_auth_headers().await?;
+        let provider_headers = self.resolve_provider_headers().await?;
         let mut headers = self.build_headers_with_timeout(
             retry_count,
             extra_headers,
-            dynamic_auth_headers.as_ref(),
+            &provider_headers,
             timeout_ms,
         )?;
         apply_raw_body_content_type(&mut headers, &effective_body)?;

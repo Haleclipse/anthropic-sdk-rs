@@ -11,7 +11,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anthropic_sdk::client::{
-    Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions, Nullable,
+    Anthropic, ClientOptions as CoreClientOptions, Nullable, RequestHeadersProvider,
 };
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
@@ -61,6 +61,30 @@ pub trait TokenProvider: Send + Sync {
     /// Return a valid OAuth bearer token without the `Bearer ` prefix.
     fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>>;
 
+    /// Return the auth headers for the next request, TS
+    /// `authClient.getRequestHeaders()`. The default sends
+    /// `Authorization: Bearer <get_token()>`; [`GoogleAuth`] also sends
+    /// `x-goog-user-project`, and a provider for a proxy that authenticates on
+    /// its own can return no headers.
+    ///
+    /// [`GoogleAuth`]: crate::GoogleAuth
+    fn request_headers(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<HashMap<String, String>, ApiError>> {
+        Box::pin(async move {
+            let token = self.get_token().await?;
+            if token.trim().is_empty() {
+                return Err(ApiError::Sdk(
+                    "Expected auth_token_provider to return a non-empty string".to_owned(),
+                ));
+            }
+            Ok(HashMap::from([(
+                "authorization".to_owned(),
+                format!("Bearer {token}"),
+            )]))
+        })
+    }
+
     /// Return a project id resolved from credentials, if available.
     ///
     /// The default returns `None`, preserving the explicit-`project_id`
@@ -70,14 +94,18 @@ pub trait TokenProvider: Send + Sync {
     }
 }
 
+/// Puts the Vertex auth headers where TS `prepareOptions` does: after the
+/// default headers, before the request's own (`client.ts:122-132`).
 struct VertexTokenProviderAdapter {
     inner: Arc<dyn TokenProvider>,
 }
 
-impl AuthTokenProvider for VertexTokenProviderAdapter {
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
+impl RequestHeadersProvider for VertexTokenProviderAdapter {
+    fn request_headers(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<HashMap<String, String>, ApiError>> {
         Box::pin(async move {
-            self.inner.get_token().await.map_err(|err| {
+            self.inner.request_headers().await.map_err(|err| {
                 ApiError::Sdk(format!(
                     "Failed to get token from Vertex token provider: {err}"
                 ))
@@ -106,7 +134,9 @@ pub struct VertexConfig {
     pub access_token: Option<String>,
 
     /// Dynamic OAuth token provider called on every request attempt.
-    /// Maps to the auth-client token refresh behavior in the TS Vertex SDK.
+    /// Maps to TS `googleAuth`/`authClient`. Without it or `access_token`, the
+    /// client uses [`GoogleAuth`](crate::GoogleAuth), Application Default
+    /// Credentials, as TS defaults to `new GoogleAuth(...)`.
     pub token_provider: Option<Arc<dyn TokenProvider>>,
 
     /// Optional endpoint override.
@@ -143,18 +173,17 @@ impl VertexConfig {
     /// | `ANTHROPIC_VERTEX_PROJECT_ID` | `project_id` | primary  |
     /// | `ANTHROPIC_VERTEX_BASE_URL`   | `base_url`   | primary  |
     ///
-    /// Returns `Err` when no region variable is set or when no project id env
-    /// value is present. Runtime token providers can still resolve project ids
-    /// through [`TokenProvider::project_id`] when constructing clients manually.
+    /// Returns `Err` when no region variable is set. Without a project id
+    /// variable, `project_id` is empty and the client resolves it from the
+    /// credentials ([`TokenProvider::project_id`]), as TS falls back to
+    /// `authClient.projectId`.
     pub fn from_env() -> Result<Self, ApiError> {
         // TS `client.ts:79,83`: `if (!region) throw`, so empty counts as unset.
         let region = read_env("CLOUD_ML_REGION")
             .filter(|value| !value.is_empty())
             .ok_or_else(vertex_missing_region_error)?;
 
-        let project_id = read_env("ANTHROPIC_VERTEX_PROJECT_ID")
-            .filter(|value| !value.is_empty())
-            .ok_or_else(vertex_missing_project_id_error)?;
+        let project_id = read_env("ANTHROPIC_VERTEX_PROJECT_ID").unwrap_or_default();
 
         // TS `client.ts:78,90`: `baseURL || <regional URL>`.
         let base_url = read_env("ANTHROPIC_VERTEX_BASE_URL").filter(|value| !value.is_empty());
@@ -183,22 +212,27 @@ fn vertex_missing_project_id_error() -> ApiError {
     )
 }
 
-fn validate_vertex_config(config: &VertexConfig) -> Result<(), ApiError> {
-    if config.region.trim().is_empty() {
-        return Err(vertex_missing_region_error());
+/// The given token provider, else Application Default Credentials unless a
+/// static `access_token` is set. TS defaults `googleAuth` to
+/// `new GoogleAuth({ scopes })` (`client.ts:106-111`).
+fn effective_token_provider(config: &VertexConfig) -> Option<Arc<dyn TokenProvider>> {
+    match (&config.token_provider, &config.access_token) {
+        (Some(provider), _) => Some(Arc::clone(provider)),
+        (None, Some(_)) => None,
+        (None, None) => Some(Arc::new(crate::GoogleAuth::new())),
     }
-    resolved_project_id(config).map(|_| ())
 }
 
-fn resolved_project_id(config: &VertexConfig) -> Result<String, ApiError> {
+fn resolved_project_id(
+    config: &VertexConfig,
+    token_provider: Option<&Arc<dyn TokenProvider>>,
+) -> Result<String, ApiError> {
     let configured = config.project_id.trim();
     if !configured.is_empty() {
         return Ok(configured.to_owned());
     }
 
-    config
-        .token_provider
-        .as_ref()
+    token_provider
         .and_then(|provider| provider.project_id())
         .map(|project_id| project_id.trim().to_owned())
         .filter(|project_id| !project_id.is_empty())
@@ -220,12 +254,7 @@ pub struct AnthropicVertex {
 impl AnthropicVertex {
     /// Create an [`AnthropicVertex`] client wrapper.
     pub fn new(config: &VertexConfig) -> Result<Self, ApiError> {
-        let project_id = resolved_project_id(config)?;
-        Ok(Self {
-            inner: create_client(config)?,
-            project_id,
-            region: config.region.trim().to_owned(),
-        })
+        Self::new_with_core_options(config, CoreClientOptions::default())
     }
 
     /// Create an [`AnthropicVertex`] wrapper while also passing core SDK
@@ -238,9 +267,9 @@ impl AnthropicVertex {
         config: &VertexConfig,
         core_options: CoreClientOptions,
     ) -> Result<Self, ApiError> {
-        let project_id = resolved_project_id(config)?;
+        let (inner, project_id) = build_vertex_client(config, core_options)?;
         Ok(Self {
-            inner: create_client_with_core_options(config, core_options)?,
+            inner,
             project_id,
             region: config.region.trim().to_owned(),
         })
@@ -297,13 +326,26 @@ pub fn create_client(config: &VertexConfig) -> Result<Anthropic, ApiError> {
 ///
 /// Maps to the TS Vertex `ClientOptions` type, which is the provider-specific
 /// option set plus `Omit<CoreClientOptions, 'apiKey' | 'authToken'>`. Rust keeps
-/// provider config and core options as separate structs for backwards
-/// compatibility with existing `VertexConfig` literals.
+/// provider config and core options as separate structs, so `VertexConfig`
+/// holds only the provider's own settings.
 pub fn create_client_with_core_options(
     config: &VertexConfig,
-    mut core_options: CoreClientOptions,
+    core_options: CoreClientOptions,
 ) -> Result<Anthropic, ApiError> {
-    validate_vertex_config(config)?;
+    build_vertex_client(config, core_options).map(|(client, _)| client)
+}
+
+/// Builds the core client and resolves the project id from the same token
+/// provider, so a default [`GoogleAuth`](crate::GoogleAuth) is read once.
+fn build_vertex_client(
+    config: &VertexConfig,
+    mut core_options: CoreClientOptions,
+) -> Result<(Anthropic, String), ApiError> {
+    if config.region.trim().is_empty() {
+        return Err(vertex_missing_region_error());
+    }
+    let token_provider = effective_token_provider(config);
+    let project_id = resolved_project_id(config, token_provider.as_ref())?;
 
     let region = config.region.trim();
     let host = vertex_host(region);
@@ -315,30 +357,25 @@ pub fn create_client_with_core_options(
         .clone()
         .filter(|base_url| !base_url.is_empty())
         .unwrap_or_else(|| format!("https://{host}/v1"));
-    let auth_token_provider = config.token_provider.as_ref().map(|inner| {
-        Arc::new(VertexTokenProviderAdapter {
-            inner: Arc::clone(inner),
-        }) as Arc<dyn AuthTokenProvider>
-    });
-
     core_options.base_url = Some(base_url);
     // TS `AnthropicVertex` passes neither to `super`, but always adds the GCP
-    // `Authorization` as the last header layer (`client.ts:109-131`), so an
-    // ambient `ANTHROPIC_AUTH_TOKEN` never reaches Google. This port has no
-    // default GCP auth, so the equivalent is an explicit `Null` unless an
-    // `access_token` is given. The key keeps the core default and is sent as
-    // `x-api-key`, as TS and Go (`DefaultClientOptions`) do: that hands a
-    // first-party key to Google; both official SDKs do it.
+    // `Authorization` from `prepareOptions` (`client.ts:122-132`), so an
+    // ambient `ANTHROPIC_AUTH_TOKEN` never reaches Google: the token is `Null`
+    // unless a static `access_token` is given. The key keeps the core default
+    // and is sent as `x-api-key`, as TS and Go (`DefaultClientOptions`) do:
+    // that hands a first-party key to Google; both official SDKs do it.
     core_options.api_key = Nullable::Unset;
     core_options.auth_token = match &config.access_token {
         Some(token) => Nullable::Set(token.clone()),
         None => Nullable::Null,
     };
-    core_options.auth_token_provider = auth_token_provider;
+    core_options.request_headers_provider = token_provider.map(|inner| {
+        Arc::new(VertexTokenProviderAdapter { inner }) as Arc<dyn RequestHeadersProvider>
+    });
     // TS `validateHeaders() {}` (`client.ts:118-120`): GCP auth authenticates.
     core_options.skip_auth_validation = true;
 
-    Anthropic::new(core_options)
+    Ok((Anthropic::new(core_options)?, project_id))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

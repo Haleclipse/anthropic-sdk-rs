@@ -48,11 +48,11 @@ The Rust workspace matches the official provider package versions and implements
 - Stable/beta messages route to `rawPredict` and streaming calls route to `streamRawPredict`.
 - Stable/beta token counting routes to `count-tokens:rawPredict`, including official custom-path/method override behavior.
 - `anthropic_version`, stream flags, beta headers, request body overrides, and custom-path bypass behavior are covered.
-- Static access tokens and dynamic token providers produce bearer auth.
+- Static access tokens and dynamic token providers produce bearer auth. Without either, the client uses Application Default Credentials (`GoogleAuth`), as TS defaults to `new GoogleAuth(...)`.
+- Token-provider headers are merged after `default_headers` and before the request's own, as TS `prepareOptions` does, so a caller's `Authorization` default never replaces Google's.
 - The SDK's own environment read never sends `ANTHROPIC_AUTH_TOKEN` to Google.
 - An ambient `ANTHROPIC_API_KEY` is sent as `x-api-key`, as TS and Go send it.
-- Caller `default_headers` still override the GCP `Authorization`; in TS the GCP headers win (see PARITY_REPORT).
-- Project IDs can be supplied explicitly or resolved by the Rust token-provider abstraction.
+- Project IDs can be supplied explicitly or resolved from the credentials, as `authClient.projectId ?? x-goog-user-project`.
 - Stable/beta message batches are absent from the narrowed provider wrappers.
 
 ### Foundry
@@ -70,7 +70,10 @@ These are tracked language/runtime adaptations rather than unreviewed implementa
 
 - Rust uses snake_case fields/methods and typed configuration structs. Provider-specific config and core client options are separate arguments instead of one structurally-typed JavaScript object.
 - JavaScript callback/auth objects are represented by `AwsCredentialProvider` and `TokenProvider` traits.
-- Vertex does not embed Node's `google-auth-library`; applications supply a static token or a Rust token provider, which can wrap their preferred Google ADC library.
+- Vertex does not embed Node's `google-auth-library`. Its default `GoogleAuth` ports only the credential types Vertex needs, following the Rust `google-cloud-auth` crate without depending on it:
+  - authorized user, service account, impersonated service account, and external account with a file or URL source;
+  - the metadata server.
+  Other types (executable- or AWS-sourced external accounts, `external_account_authorized_user`) fail with an error. Applications can supply a `TokenProvider` instead.
 - Bedrock uses a native Rust SigV4 implementation and AWS SDK credential chain. Its canonical request can be semantically valid without producing byte-identical headers to the JavaScript Smithy signer.
 - Bedrock loads the AWS credential chain once per client and caches credentials until shortly before they expire, as Go does. TS rebuilds the chain on every request and passes explicit keys through a temporarily rewritten `process.env`, which Rust cannot do soundly. `BedrockConfig::sdk_config` is the Rust form of Go `WithConfig`. See PARITY_REPORT § Bedrock loads the AWS credential chain once per client.
 - `reqwest` streams replace Fetch/ReadableStream/AbortController runtime objects.

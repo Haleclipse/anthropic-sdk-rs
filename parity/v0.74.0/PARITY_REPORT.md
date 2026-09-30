@@ -3,6 +3,30 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Vertex defaults to Application Default Credentials (2026-09-30)
+
+- TS `AnthropicVertex` defaults `googleAuth` to `new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' })` (`client.ts:106-111`). The Rust client had no default and sent requests unauthenticated. It now uses `anthropic_sdk_vertex::GoogleAuth` when given neither `access_token` nor `token_provider`.
+- `GoogleAuth` ports the credential types Vertex needs, following the Rust `google-cloud-auth` crate without depending on it (24.5k lines): no crate is added.
+  - **Sources**, in Node's order: `GOOGLE_APPLICATION_CREDENTIALS`, then the gcloud well-known file, then the metadata server.
+  - **Metadata detection:** `METADATA_SERVER_DETECTION`, GCP residency (serverless variables, Linux BIOS), then a 3 s ping. The MAC-address check is not ported.
+  - **Credential types:**
+    - `authorized_user` exchanges its refresh token.
+    - `service_account` exchanges an RS256 JWT at `token_uri`, as Node's `gtoken` does. The JWT is signed with the process's rustls `CryptoProvider`, so no crypto backend is added; Android has none, and service accounts fail there with an error.
+    - `impersonated_service_account` calls IAM `generateAccessToken`.
+    - `external_account` with a `file` or `url` source goes through the STS exchange, then optional impersonation.
+  - **Unsupported** (error naming `TokenProvider`): executable- and AWS-sourced external accounts, `external_account_authorized_user`.
+  - Tokens are cached and fetched again five minutes before expiry (Node's `eagerRefreshThresholdMillis`).
+  - `request_headers` adds `x-goog-user-project` for `GOOGLE_CLOUD_QUOTA_PROJECT` or the file's `quota_project_id`, as `getRequestHeaders()` does.
+  - Environment variables are read through `read_env` when the client is built; the network is used on the first request.
+  - With no credentials, the error is Node's `NO_ADC_FOUND` text.
+- **Project id.** `VertexConfig::from_env` no longer requires `ANTHROPIC_VERTEX_PROJECT_ID`. An empty `project_id` is resolved from the credentials: the service account's `project_id`, else the quota project (TS `authClient.projectId ?? authHeaders['x-goog-user-project']`). Building fails with TS's message when neither exists.
+- **Header layering.** New core hook `RequestHeadersProvider` (`ClientOptions::request_headers_provider`), the Rust form of TS `prepareOptions()` prepending headers: after `default_headers`, before the request's own. The Vertex token provider now sits there, so a caller's `Authorization` default no longer replaces Google's. This closes the difference recorded in the S5 section below.
+- `TokenProvider` gains `request_headers()`, whose default sends the Bearer from `get_token()`, so existing implementors are unchanged. A provider can return no headers, for a proxy that authenticates itself.
+- **Behaviour change:** a Vertex client given no credentials now authenticates with ADC. Without ADC, its requests fail with `NO_ADC_FOUND` instead of being sent without `Authorization`.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets`: 728 passed.
+  - Eight new ADC tests, against mock endpoints in exact child environments: each credential type, the metadata server, no ADC, an unsupported source, and GCP headers beating `default_headers`.
+  - The suite also passes with the host exporting `ANTHROPIC_*` and a bogus `GOOGLE_APPLICATION_CREDENTIALS`.
+
 ## Provider clients skip core auth validation, as TS's `validateHeaders() {}` (2026-09-30)
 
 - The TS Bedrock, Vertex and Foundry clients override `validateHeaders()` with a no-op (`client.ts:86-88`, `:118-120`, `:133-135`): their own signing or token logic authenticates.

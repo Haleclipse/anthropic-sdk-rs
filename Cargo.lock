@@ -78,12 +78,15 @@ name = "anthropic-sdk-vertex"
 version = "0.14.3"
 dependencies = [
  "anthropic-sdk",
+ "base64",
  "futures",
  "pretty_assertions",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
+ "url",
  "wiremock",
 ]
 

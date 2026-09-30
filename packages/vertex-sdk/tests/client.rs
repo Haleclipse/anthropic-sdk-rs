@@ -978,19 +978,22 @@ fn from_env_requires_region() {
     );
 }
 
+/// TS takes `projectId = readEnv(...) ?? null` and falls back to the
+/// credentials; the error comes only when neither has one.
 #[test]
-fn from_env_requires_project_id() {
+fn from_env_without_project_id_resolves_it_from_credentials_or_fails_to_build() {
     if child_env::run_in_child_env(
         module_path!(),
-        "from_env_requires_project_id",
+        "from_env_without_project_id_resolves_it_from_credentials_or_fails_to_build",
         &[("CLOUD_ML_REGION", " primary-region ")],
     ) {
         return;
     }
-    let result = VertexConfig::from_env();
-    assert!(result.is_err());
+    let config = VertexConfig::from_env().unwrap();
+    assert_eq!(config.project_id, "");
+    let error = create_client(&config).unwrap_err();
     assert_eq!(
-        result.unwrap_err().to_string(),
+        error.to_string(),
         "SDK error: No projectId was given and it could not be resolved from credentials. The client should be instantiated with the `projectId` option or the `ANTHROPIC_VERTEX_PROJECT_ID` environment variable should be set."
     );
 }
