@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use anthropic_sdk::client::Nullable;
 use anthropic_sdk::resources::beta::messages::{
     BetaMessageContent, BetaMessageCountTokensParams, BetaMessageCreateParams, BetaMessageParam,
 };
@@ -781,6 +782,44 @@ fn ambient_anthropic_token_never_reaches_vertex_but_the_key_does_like_ts() {
     let headers = client.build_headers(0, None).unwrap();
     assert!(headers.get("authorization").is_none(), "{headers:?}");
     assert_eq!(headers.get("x-api-key").unwrap(), "ambient-key");
+}
+
+/// A caller that read the environment itself passes the key it read: `Null`
+/// sends none and a value replaces the ambient one.
+#[test]
+fn caller_api_key_replaces_the_core_default() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "caller_api_key_replaces_the_core_default",
+        &[("ANTHROPIC_API_KEY", "ambient-key")],
+    ) {
+        return;
+    }
+    let mut cfg = vertex_config("my-project", "us-east5");
+    cfg.access_token = None;
+    let build = |api_key| {
+        AnthropicVertex::new_with_core_options(
+            &cfg,
+            CoreClientOptions {
+                api_key,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .build_headers(0, None)
+        .unwrap()
+    };
+    assert!(build(Nullable::Null).get("x-api-key").is_none());
+    assert_eq!(
+        build(Nullable::Set("explicit-key".into()))
+            .get("x-api-key")
+            .unwrap(),
+        "explicit-key"
+    );
+    assert_eq!(
+        build(Nullable::Unset).get("x-api-key").unwrap(),
+        "ambient-key"
+    );
 }
 
 #[test]

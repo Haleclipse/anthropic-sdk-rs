@@ -16,7 +16,7 @@ use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvid
 use aws_credential_types::Credentials;
 
 use crate::core::streaming::BedrockEventStream;
-use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions, Nullable};
+use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
 use anthropic_sdk::internal::env::read_env;
@@ -519,6 +519,8 @@ fn build_bedrock_client(
     core_options.base_url = Some(base_url);
     // TS `AnthropicBedrock` passes neither to `super`, so the core defaults
     // (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) still apply and are sent.
+    // Both keep the caller's values, by default `Unset`, the core defaults; an
+    // application that reads its environment itself passes the values it read.
     // - The key goes out as `x-api-key` next to the SigV4 headers, as in TS
     //   and Go (`DefaultClientOptions`). That hands a first-party key to AWS;
     //   both official SDKs do it.
@@ -526,8 +528,6 @@ fn build_bedrock_client(
     //   Otherwise SigV4 replaces it, as in Go. TS merges the request headers
     //   after the signature (`client.ts:113`), so there the token overwrites
     //   SigV4 and the request fails AWS auth; that is not ported.
-    core_options.api_key = Nullable::Unset;
-    core_options.auth_token = Nullable::Unset;
     core_options.auth_token_provider = None;
     // TS `validateHeaders() {}` (`client.ts:86-88`): SigV4 authenticates.
     core_options.skip_auth_validation = true;

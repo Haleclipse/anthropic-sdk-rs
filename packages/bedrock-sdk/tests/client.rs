@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use anthropic_sdk::client::Nullable;
 use anthropic_sdk::resources::beta::messages::{
     BetaMessageContent, BetaMessageCreateParams, BetaMessageParam,
 };
@@ -409,6 +410,51 @@ fn core_options_are_preserved_like_ts_provider_extends_core_client_options() {
     let headers = client.build_headers(0, None).unwrap();
     assert_eq!(headers.get("x-bedrock-default").unwrap(), "yes");
     assert!(headers.get("x-api-key").is_none());
+}
+
+/// A caller that read the environment itself passes the credentials it read:
+/// `Null` sends none and a value replaces the ambient one.
+#[test]
+fn caller_api_key_and_token_replace_the_core_defaults() {
+    if child_env::run_in_child_env(
+        module_path!(),
+        "caller_api_key_and_token_replace_the_core_defaults",
+        &[
+            ("ANTHROPIC_API_KEY", "ambient-key"),
+            ("ANTHROPIC_AUTH_TOKEN", "ambient-token"),
+        ],
+    ) {
+        return;
+    }
+    let build = |api_key, auth_token| {
+        let mut cfg = bedrock_config("us-east-1");
+        cfg.base_url = Some("https://bedrock.local".to_owned());
+        create_client_with_core_options(
+            cfg,
+            CoreClientOptions {
+                api_key,
+                auth_token,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .build_headers(0, None)
+        .unwrap()
+    };
+    let headers = build(Nullable::Null, Nullable::Null);
+    assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+    assert!(headers.get("authorization").is_none(), "{headers:?}");
+    let headers = build(
+        Nullable::Set("explicit-key".into()),
+        Nullable::Set("explicit-token".into()),
+    );
+    assert_eq!(headers.get("x-api-key").unwrap(), "explicit-key");
+    assert_eq!(
+        headers.get("authorization").unwrap(),
+        "Bearer explicit-token"
+    );
+    let headers = build(Nullable::Unset, Nullable::Unset);
+    assert_eq!(headers.get("x-api-key").unwrap(), "ambient-key");
 }
 
 #[test]

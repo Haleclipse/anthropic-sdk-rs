@@ -361,10 +361,11 @@ fn build_vertex_client(
     // TS `AnthropicVertex` passes neither to `super`, but always adds the GCP
     // `Authorization` from `prepareOptions` (`client.ts:122-132`), so an
     // ambient `ANTHROPIC_AUTH_TOKEN` never reaches Google: the token is `Null`
-    // unless a static `access_token` is given. The key keeps the core default
-    // and is sent as `x-api-key`, as TS and Go (`DefaultClientOptions`) do:
-    // that hands a first-party key to Google; both official SDKs do it.
-    core_options.api_key = Nullable::Unset;
+    // unless a static `access_token` is given. The key is the caller's, by
+    // default `Unset`, the core default, and is sent as `x-api-key`, as TS and
+    // Go (`DefaultClientOptions`) do: that hands a first-party key to Google;
+    // both official SDKs do it. An application that reads its environment
+    // itself passes the value it read.
     core_options.auth_token = match &config.access_token {
         Some(token) => Nullable::Set(token.clone()),
         None => Nullable::Null,
