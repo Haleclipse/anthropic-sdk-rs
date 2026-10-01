@@ -24,8 +24,18 @@ sha2 = "0.10"
 crc32fast = "1"
 time = { version = "0.3", features = ["formatting"] }
 url = "2"
-aws-config = "1.8.16"
+# No default HTTPS client unless the `default-https-client` feature asks for
+# one: aws-config's links aws-lc-rs. An application with its own TLS stack
+# turns the feature off and passes `BedrockConfig::sdk_config` with an HTTP
+# client of its own.
+aws-config = { version = "1.8.16", default-features = false, features = ["rt-tokio", "credentials-process", "sso"] }
 aws-credential-types = "1.2.14"
+
+[features]
+default = ["default-https-client"]
+# aws-config's default HTTPS client, for the credential chain this crate
+# loads itself when `BedrockConfig::sdk_config` is `None`.
+default-https-client = ["aws-config/default-https-client"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

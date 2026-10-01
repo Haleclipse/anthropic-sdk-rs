@@ -52,6 +52,7 @@ The TypeScript SDK leaves TLS and proxies to the runtime's `fetch`. Here the app
   Android uses `native-tls` (OpenSSL) and needs no provider.
 - **Proxies.** reqwest reads `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY` (either case). It does not read the macOS/Windows proxy settings unless the application enables `reqwest/system-proxy`. For full control, pass your own client as `ClientOptions::http_client`.
 - **HTTP version.** Without reqwest's `http2` feature, requests use HTTP/1.1, as Node's `fetch` does by default. Enable `reqwest/http2` in the application to negotiate h2.
+- **Bedrock's AWS credential chain.** `anthropic-sdk-bedrock`'s default `default-https-client` feature gives aws-config its own HTTPS client, which links aws-lc-rs. To keep one TLS stack, depend on it with `default-features = false` and pass `BedrockConfig::sdk_config`, built with an HTTP client of your own (for example `aws-smithy-http-client` with `rustls-ring`). Without the feature and without `sdk_config`, signing reports an error.
 
 ## Validation
 

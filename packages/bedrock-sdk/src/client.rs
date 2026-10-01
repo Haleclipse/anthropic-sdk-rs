@@ -339,17 +339,25 @@ impl AwsCredentialsCache {
     }
 }
 
+/// Without the `default-https-client` feature there is no HTTP client to load
+/// the default chain with (aws-smithy asserts on one), so an application that
+/// turns it off must pass `sdk_config`; without one this is an error.
 async fn load_credentials_provider(
     config: &BedrockConfig,
 ) -> Result<SharedCredentialsProvider, &'static str> {
     let sdk_config = match &config.sdk_config {
         Some(sdk_config) => Cow::Borrowed(sdk_config),
+        #[cfg(feature = "default-https-client")]
         None => Cow::Owned(
             aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_config::Region::new(config.aws_region.clone()))
                 .load()
                 .await,
         ),
+        #[cfg(not(feature = "default-https-client"))]
+        None => {
+            return Err("no sdk_config was passed and the default-https-client feature is off");
+        }
     };
     sdk_config
         .credentials_provider()

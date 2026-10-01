@@ -557,6 +557,38 @@ async fn skip_auth_sends_the_ambient_anthropic_credentials_like_ts() {
     );
 }
 
+/// Without `default-https-client` the default chain has no HTTP client, so a
+/// client without `sdk_config` reports it rather than panicking in aws-smithy.
+#[cfg(not(feature = "default-https-client"))]
+#[tokio::test]
+async fn default_chain_without_an_https_client_is_an_error() {
+    let server = MockServer::start().await;
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+    let error = client
+        .messages()
+        .create(&MessageCreateParams {
+            model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_owned(),
+            max_tokens: 16,
+            messages: vec![MessageParam {
+                role: "user".to_owned(),
+                content: MessageContent::Text("hello".to_owned()),
+            }],
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("default-https-client"),
+        "{error}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+// The default chain needs aws-config's HTTP client.
+#[cfg(feature = "default-https-client")]
 #[tokio::test]
 async fn messages_create_uses_aws_sdk_default_provider_chain_env_credentials() {
     // Beyond `from_env`, the AWS SDK's own credential chain reads the process
