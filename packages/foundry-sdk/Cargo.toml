@@ -15,6 +15,26 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros"] }
 futures = "0.3"
+# `azure-identity` only.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
+getrandom = { version = "0.3", optional = true }
+ryu-js = { version = "1", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+
+[features]
+# A port of the part of npm `@azure/identity` a Foundry client needs:
+# `DefaultAzureCredential` (environment client secret, managed identity, Azure
+# CLI) and `getBearerTokenProvider`. The TS foundry-sdk does not depend on it;
+# Claude Code does, and hands the result in as `azureADTokenProvider`.
+azure-identity = [
+    "dep:chrono",
+    "dep:getrandom",
+    "dep:ryu-js",
+    "dep:uuid",
+    "tokio/process",
+    "tokio/time",
+    "tokio/sync",
+]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

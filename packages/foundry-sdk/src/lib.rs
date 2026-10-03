@@ -1,5 +1,7 @@
 // Maps to: TS packages/foundry-sdk/src/index.ts
 
+#[cfg(feature = "azure-identity")]
+pub mod azure_identity;
 pub mod client;
 pub mod core;
 

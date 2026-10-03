@@ -3,6 +3,15 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Foundry gains an optional port of `@azure/identity` (2026-10-04)
+
+- The TS `AnthropicFoundry` takes an `azureADTokenProvider` and leaves building one to the application; Claude Code builds it with `@azure/identity` (`getBearerTokenProvider(new DefaultAzureCredential(), 'https://cognitiveservices.azure.com/.default')`). The new `azure-identity` feature, off by default, carries a port of that part: `anthropic_sdk_foundry::azure_identity`.
+- **Credentials:** `DefaultAzureCredential` chains three of the eight npm credentials, in their order: `EnvironmentCredential` (client secret only), `ManagedIdentityCredential` (IMDS and App Service), `AzureCliCredential`. `AZURE_TOKEN_CREDENTIALS` selects as in npm. The chain's continue/halt rules and error texts are npm's. The certificate and username/password branches, workload identity, the other managed identity sources and the other developer credentials report themselves unavailable (managed identity never falls back to IMDS when another source is detected).
+- **Behind them:** MSAL's client-credential flow (authority metadata and aliases, regional authorities, CAE claims, instance cache, 60 s throttling), the managed identity sources with the IMDS probe, the 404/410 IMDS retry policy and the process-wide token cache, and core-rest-pipeline's token cycler and retry strategies.
+- **Inputs:** `DefaultAzureCredentialOptions { env: Environment, http_client: Option<reqwest::Client> }`. The npm package reads the Node process; this port reads nothing from the process: the caller passes the environment (also `az`'s whole environment), and optionally the client. Without one, a default `reqwest::Client` is used, whose proxy comes from the OS environment by reqwest's rules, not core-rest-pipeline's.
+- Optional dependencies added for the feature: `chrono`, `getrandom`, `ryu-js`, `uuid`.
+- Verification: fmt, strict Clippy with and without the feature, and `cargo test --workspace --all-targets` with the feature: 773 passed, 42 of them new unit tests (local stand-ins for the token endpoints and a fake `az`; no network). Run with the host's `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` unset: three core client tests read them (a known residual).
+
 ## Foundry wraps a token provider's foreign errors, as TS (2026-10-03)
 
 - TS `AnthropicFoundry.authHeaders` (`packages/foundry-sdk/src/client.ts:105-115`) rethrows an `AnthropicError` the token provider throws and wraps any other error as `Failed to get token from azureADTokenProvider: ${err.message}`. Rust's `TokenProvider` returned `ApiError`, so it could not tell the two apart and passed everything through: a credential library's error lost the prefix.
