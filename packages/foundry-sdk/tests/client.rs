@@ -11,7 +11,7 @@ use anthropic_sdk::{
 };
 use anthropic_sdk_foundry::{
     base_url, create_client, create_client_with_core_options, AnthropicFoundry,
-    FoundryClientOptions, FoundryConfig, TokenProvider,
+    FoundryClientOptions, FoundryConfig, TokenProvider, TokenProviderError,
 };
 use serde_json::Value;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
@@ -493,7 +493,7 @@ async fn foundry_beta_messages_tool_runner_uses_foundry_endpoint() {
 struct DummyTokenProvider;
 
 impl TokenProvider for DummyTokenProvider {
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>> {
         Box::pin(async { Ok("test-token".to_owned()) })
     }
 }
@@ -546,7 +546,7 @@ fn create_client_with_token_provider() {
 struct EmptyTokenProvider;
 
 impl TokenProvider for EmptyTokenProvider {
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>> {
         Box::pin(async { Ok(String::new()) })
     }
 }
@@ -554,8 +554,18 @@ impl TokenProvider for EmptyTokenProvider {
 struct FailingTokenProvider;
 
 impl TokenProvider for FailingTokenProvider {
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
-        Box::pin(async { Err(ApiError::Sdk("provider sentinel".to_owned())) })
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>> {
+        Box::pin(async { Err(ApiError::Sdk("provider sentinel".to_owned()).into()) })
+    }
+}
+
+/// A provider failing with something other than an `ApiError`, as a
+/// credential library does.
+struct ForeignErrorTokenProvider;
+
+impl TokenProvider for ForeignErrorTokenProvider {
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>> {
+        Box::pin(async { Err("ChainedTokenCredential authentication failed.".into()) })
     }
 }
 
@@ -564,7 +574,7 @@ struct CountingTokenProvider {
 }
 
 impl TokenProvider for CountingTokenProvider {
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>> {
         let counter = Arc::clone(&self.counter);
         Box::pin(async move {
             let next = counter.fetch_add(1, Ordering::SeqCst) + 1;
@@ -714,6 +724,27 @@ async fn token_provider_api_errors_are_rethrown_unchanged_like_ts() {
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), "SDK error: provider sentinel");
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// TS `authHeaders` (`client.ts:105-115`) wraps a non-`AnthropicError`.
+#[tokio::test]
+async fn token_provider_foreign_errors_are_wrapped_like_ts() {
+    let server = MockServer::start().await;
+    let client = create_client(FoundryConfig {
+        resource: String::new(),
+        api_key: None,
+        token_provider: Some(Box::new(ForeignErrorTokenProvider)),
+        base_url: Some(server.uri()),
+    })
+    .unwrap();
+
+    let error = client
+        .get::<Value>("/v1/test", None, None)
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, ApiError::Sdk(message) if message
+        == "Failed to get token from azureADTokenProvider: ChainedTokenCredential authentication failed."));
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 

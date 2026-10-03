@@ -49,8 +49,14 @@ pub use anthropic_sdk::BaseAnthropic;
 /// implementors should cache tokens internally and only refresh when needed.
 pub trait TokenProvider: Send + Sync {
     /// Return a valid bearer token.
-    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>>;
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, TokenProviderError>>;
 }
+
+/// What a [`TokenProvider`] fails with. TS `authHeaders` (`client.ts:105-115`)
+/// rethrows an `AnthropicError` the provider throws and wraps anything else, so
+/// a boxed [`ApiError`] comes out unchanged and any other error is wrapped as
+/// `Failed to get token from azureADTokenProvider: <its message>`.
+pub type TokenProviderError = Box<dyn std::error::Error + Send + Sync>;
 
 struct FoundryTokenProviderAdapter {
     inner: Box<dyn TokenProvider>,
@@ -59,9 +65,17 @@ struct FoundryTokenProviderAdapter {
 impl AuthTokenProvider for FoundryTokenProviderAdapter {
     fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, ApiError>> {
         Box::pin(async move {
-            // TS rethrows provider-produced AnthropicError values unchanged.
-            // Rust token providers already return ApiError, so preserve it.
-            let token = self.inner.get_token().await?;
+            let token = match self.inner.get_token().await {
+                Ok(token) => token,
+                Err(error) => {
+                    return Err(match error.downcast::<ApiError>() {
+                        Ok(error) => *error,
+                        Err(error) => ApiError::Sdk(format!(
+                            "Failed to get token from azureADTokenProvider: {error}"
+                        )),
+                    });
+                }
+            };
             if token.is_empty() {
                 return Err(ApiError::Sdk(
                     "Expected azureADTokenProvider function argument to return a string but it returned "

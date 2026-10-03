@@ -3,6 +3,12 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Foundry wraps a token provider's foreign errors, as TS (2026-10-03)
+
+- TS `AnthropicFoundry.authHeaders` (`packages/foundry-sdk/src/client.ts:105-115`) rethrows an `AnthropicError` the token provider throws and wraps any other error as `Failed to get token from azureADTokenProvider: ${err.message}`. Rust's `TokenProvider` returned `ApiError`, so it could not tell the two apart and passed everything through: a credential library's error lost the prefix.
+- **Breaking:** `TokenProvider::get_token` now returns `Result<String, TokenProviderError>`, a boxed `std::error::Error`. A boxed `ApiError` comes out unchanged; any other error becomes `ApiError::Sdk` with TS's prefix. Implementors that returned `ApiError` add `.into()`.
+- Verification: fmt, strict Clippy and `cargo test --workspace --all-targets`: 731 passed, one new test for a foreign error.
+
 ## Vertex defaults to Application Default Credentials (2026-09-30)
 
 - TS `AnthropicVertex` defaults `googleAuth` to `new GoogleAuth({ scopes: 'https://www.googleapis.com/auth/cloud-platform' })` (`client.ts:106-111`). The Rust client had no default and sent requests unauthenticated. It now uses `anthropic_sdk_vertex::GoogleAuth` when given neither `access_token` nor `token_provider`.
