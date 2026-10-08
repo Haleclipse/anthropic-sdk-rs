@@ -3,6 +3,11 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Bedrock signs the request path as the TS signer escapes it (2026-10-08)
+
+- TS signs with `@smithy/signature-v4` (`core/auth.ts`), whose `uriEscapePath` is on by default: `getCanonicalPath` drops the path's empty and `.` segments, resolves `..`, and escapes the already encoded path once more, keeping `/`. So `:` is signed as `%3A` and an escape such as `%2F` as `%252F`, as AWS computes it for every service but S3. The Rust signer signed the path as sent, which gave a signature AWS does not compute for any model ID with a `:` (every versioned Bedrock ID, such as `…-v2:0`) or an encoded `/` (inference profile ARNs). `canonical_uri` now follows `getCanonicalPath`.
+- Verification: a unit test checks the signer against the signatures `@smithy/signature-v4` 3.1.2 makes for six paths (plain, `:`, an encoded `:`, an ARN, an encoded space and non-ASCII character, an empty segment); the client tests' own recomputation of expected signatures builds the same path. fmt, strict Clippy, `cargo test --workspace --all-targets`: 762 passed.
+
 ## Bedrock's default credential chain is a port of the TS one (2026-10-08)
 
 - TS resolves credentials it is not given with `@aws-sdk/credential-providers`' `fromNodeProviderChain` (`core/auth.ts:19-31`). `anthropic-sdk-bedrock` used the AWS SDK for Rust's chain (`aws-config`) instead; it now ports the npm one as `credential_providers`, one file per npm package (`credential-provider-node`, `-env`, `-ini`, `-process`, `-http`, `@smithy/credential-provider-imds`, `@smithy/shared-ini-file-loader`, `@smithy/property-provider`), and no longer depends on `aws-config` or `aws-credential-types`.

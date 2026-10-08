@@ -90,7 +90,7 @@ fn expected_authorization(
     let canonical_request = format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
         method.to_ascii_uppercase(),
-        parsed.path(),
+        canonical_path_for_test(&parsed),
         canonical_query_for_test(&parsed),
         canonical_headers,
         signed_headers,
@@ -114,6 +114,28 @@ fn expected_authorization(
         "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
         config.aws_access_key.as_deref().unwrap(),
     )
+}
+
+/// Smithy's `getCanonicalPath`: the normalized path, escaped again with `/`
+/// kept (`auth.rs` checks the signer against the TS one's signatures).
+fn canonical_path_for_test(url: &url::Url) -> String {
+    let path = url.path();
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            _ => segments.push(segment),
+        }
+    }
+    let trailing = if !segments.is_empty() && path.ends_with('/') {
+        "/"
+    } else {
+        ""
+    };
+    sigv4_encode_for_test(&format!("/{}{trailing}", segments.join("/"))).replace("%2F", "/")
 }
 
 fn canonical_query_for_test(url: &url::Url) -> String {
