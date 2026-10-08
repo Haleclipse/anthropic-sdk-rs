@@ -14,6 +14,9 @@ use anthropic_sdk::{
     RequestOptions,
 };
 use anthropic_sdk_bedrock::core::streaming::Stream as BedrockCoreStream;
+use anthropic_sdk_bedrock::credential_providers::{
+    from_node_provider_chain, Environment, NodeProviderChainOptions,
+};
 use anthropic_sdk_bedrock::{
     create_client, create_client_with_core_options, get_auth_headers, rewrite_url,
     AnthropicBedrock, AwsCredentialProvider, AwsCredentials, BedrockConfig,
@@ -37,7 +40,6 @@ fn bedrock_config(region: &str) -> BedrockConfig {
         aws_session_token: None,
         base_url: None,
         credential_provider: None,
-        sdk_config: None,
         skip_auth: true,
     }
 }
@@ -164,7 +166,6 @@ fn get_auth_headers_signs_bedrock_request_with_static_credentials() {
         aws_session_token: Some("session-token".to_owned()),
         base_url: None,
         credential_provider: None,
-        sdk_config: None,
         skip_auth: false,
     };
     let body = br#"{"anthropic_version":"bedrock-2023-05-31","messages":[]}"#;
@@ -603,45 +604,13 @@ async fn skip_auth_sends_the_ambient_anthropic_credentials_like_ts() {
     );
 }
 
-/// Without `default-https-client` the default chain has no HTTP client, so a
-/// client without `sdk_config` reports it rather than panicking in aws-smithy.
-#[cfg(not(feature = "default-https-client"))]
 #[tokio::test]
-async fn default_chain_without_an_https_client_is_an_error() {
-    let server = MockServer::start().await;
-    let mut cfg = bedrock_config("us-east-1");
-    cfg.base_url = Some(server.uri());
-    cfg.skip_auth = false;
-    let client = AnthropicBedrock::new(cfg).unwrap();
-    let error = client
-        .messages()
-        .create(&MessageCreateParams {
-            model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_owned(),
-            max_tokens: 16,
-            messages: vec![MessageParam {
-                role: "user".to_owned(),
-                content: MessageContent::Text("hello".to_owned()),
-            }],
-            ..Default::default()
-        })
-        .await
-        .unwrap_err();
-    assert!(
-        error.to_string().contains("default-https-client"),
-        "{error}"
-    );
-    assert!(server.received_requests().await.unwrap().is_empty());
-}
-
-// The default chain needs aws-config's HTTP client.
-#[cfg(feature = "default-https-client")]
-#[tokio::test]
-async fn messages_create_uses_aws_sdk_default_provider_chain_env_credentials() {
-    // Beyond `from_env`, the AWS SDK's own credential chain reads the process
-    // environment here; no SDK option can stand in for it.
+async fn messages_create_uses_the_default_provider_chain_env_credentials() {
+    // Without keys or a provider, the client's default chain reads the
+    // process environment, as TS reads `process.env`.
     if child_env::run_in_child_env(
         module_path!(),
-        "messages_create_uses_aws_sdk_default_provider_chain_env_credentials",
+        "messages_create_uses_the_default_provider_chain_env_credentials",
         &[
             ("AWS_ACCESS_KEY_ID", "AWSCHAINKEY"),
             ("AWS_SECRET_ACCESS_KEY", "aws-chain-secret"),
@@ -1430,41 +1399,71 @@ async fn messages_create_uses_custom_aws_credential_provider_per_request() {
     );
 }
 
-/// An AWS SDK credentials provider that counts its lookups. `lifetime` sets
-/// each credential's expiry; `None` means it never expires.
-#[derive(Debug)]
-struct CountingSdkProvider {
-    counter: Arc<AtomicUsize>,
-    lifetime: Option<std::time::Duration>,
-}
-
-impl aws_credential_types::provider::ProvideCredentials for CountingSdkProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        let next = self.counter.fetch_add(1, Ordering::SeqCst) + 1;
-        aws_credential_types::provider::future::ProvideCredentials::ready(Ok(
-            aws_credential_types::Credentials::new(
-                format!("AKIDSDK{next}"),
-                "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-                Some(format!("sdk-session-{next}")),
-                self.lifetime
-                    .map(|lifetime| std::time::SystemTime::now() + lifetime),
-                "counting",
-            ),
-        ))
+/// A container credentials endpoint (`AWS_CONTAINER_CREDENTIALS_FULL_URI`)
+/// that serves one key id per lookup, the last one from then on, each
+/// expiring after `lifetime`.
+async fn mount_container_credentials(
+    server: &MockServer,
+    key_ids: &[&str],
+    lifetime: std::time::Duration,
+    delay: std::time::Duration,
+) {
+    let expiration = (time::OffsetDateTime::now_utc() + lifetime)
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    for (index, key_id) in key_ids.iter().enumerate() {
+        let mock = Mock::given(method("GET"))
+            .and(path("/credentials"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "AccessKeyId": key_id,
+                        "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+                        "Token": format!("{key_id}-session"),
+                        "Expiration": expiration,
+                    }))
+                    .set_delay(delay),
+            );
+        let mock = if index + 1 < key_ids.len() {
+            mock.up_to_n_times(1)
+        } else {
+            mock
+        };
+        mock.mount(server).await;
     }
 }
 
-fn sdk_config_with(provider: CountingSdkProvider) -> aws_config::SdkConfig {
-    aws_config::SdkConfig::builder()
-        .credentials_provider(
-            aws_credential_types::provider::SharedCredentialsProvider::new(provider),
-        )
-        .build()
+/// The default chain on an environment that names only the container
+/// endpoint (no shared files, so the profile links find nothing).
+fn container_chain(server: &MockServer) -> Arc<dyn AwsCredentialProvider> {
+    Arc::new(from_node_provider_chain(NodeProviderChainOptions {
+        env: Environment::new([
+            (
+                "AWS_CONTAINER_CREDENTIALS_FULL_URI".to_owned(),
+                format!("{}/credentials", server.uri()),
+            ),
+            (
+                "AWS_CONFIG_FILE".to_owned(),
+                "/nonexistent/anthropic-sdk-rs/config".to_owned(),
+            ),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE".to_owned(),
+                "/nonexistent/anthropic-sdk-rs/credentials".to_owned(),
+            ),
+        ]),
+        http_client: None,
+        profile: None,
+    }))
+}
+
+async fn credential_lookups(server: &MockServer) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.url.path() == "/credentials")
+        .count()
 }
 
 async fn mount_invoke(server: &MockServer, times: u64) {
@@ -1499,9 +1498,17 @@ fn hello_message() -> MessageCreateParams {
     }
 }
 
+/// A request to a credential source: the container endpoint or the instance
+/// metadata service.
+fn is_credential_request(request: &wiremock::Request) -> bool {
+    let path = request.url.path();
+    path == "/credentials" || path.starts_with("/latest/")
+}
+
 fn signing_key_ids(requests: &[wiremock::Request]) -> Vec<String> {
     requests
         .iter()
+        .filter(|request| !is_credential_request(request))
         .map(|request| {
             let authorization = request
                 .headers
@@ -1515,18 +1522,23 @@ fn signing_key_ids(requests: &[wiremock::Request]) -> Vec<String> {
         .collect()
 }
 
+/// npm's `memoizeChain`: credentials that do not expire within five minutes
+/// are looked up once and signed with until then.
 #[tokio::test]
-async fn sdk_config_credentials_are_loaded_once_and_reused_until_expiry() {
+async fn default_chain_credentials_are_looked_up_once_while_they_last() {
     let server = MockServer::start().await;
     mount_invoke(&server, 2).await;
+    mount_container_credentials(
+        &server,
+        &["AKIDCHAIN1", "AKIDCHAIN2"],
+        std::time::Duration::from_secs(3600),
+        std::time::Duration::ZERO,
+    )
+    .await;
 
-    let counter = Arc::new(AtomicUsize::new(0));
     let mut cfg = bedrock_config("us-east-1");
     cfg.base_url = Some(server.uri());
-    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
-        counter: Arc::clone(&counter),
-        lifetime: None,
-    }));
+    cfg.credential_provider = Some(container_chain(&server));
     cfg.skip_auth = false;
     let client = AnthropicBedrock::new(cfg).unwrap();
 
@@ -1534,163 +1546,109 @@ async fn sdk_config_credentials_are_loaded_once_and_reused_until_expiry() {
         client.messages().create(&hello_message()).await.unwrap();
     }
 
-    // Go `WithConfig` + `aws.CredentialsCache`: credentials without an
-    // expiry are fetched once.
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    assert_eq!(credential_lookups(&server).await, 1);
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
-    assert_eq!(
-        requests[1].headers.get("x-amz-security-token").unwrap(),
-        "sdk-session-1"
-    );
+    assert_eq!(signing_key_ids(&requests), ["AKIDCHAIN1", "AKIDCHAIN1"]);
 }
 
+/// `memoizeChain`'s `activeLock`: requests that find no credentials wait for
+/// the one lookup in flight.
 #[tokio::test]
-async fn expiring_credentials_are_reused_within_their_lifetime() {
+async fn concurrent_requests_share_one_default_chain_lookup() {
     let server = MockServer::start().await;
-    mount_invoke(&server, 2).await;
+    mount_invoke(&server, 4).await;
+    mount_container_credentials(
+        &server,
+        &["AKIDCHAIN1", "AKIDCHAIN2"],
+        std::time::Duration::from_secs(3600),
+        std::time::Duration::from_millis(100),
+    )
+    .await;
 
-    let counter = Arc::new(AtomicUsize::new(0));
     let mut cfg = bedrock_config("us-east-1");
     cfg.base_url = Some(server.uri());
-    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
-        counter: Arc::clone(&counter),
-        // IMDS, SSO and STS credentials carry an expiry like this one.
-        lifetime: Some(std::time::Duration::from_secs(3600)),
-    }));
-    cfg.skip_auth = false;
-    let client = AnthropicBedrock::new(cfg).unwrap();
-
-    for _ in 0..2 {
-        client.messages().create(&hello_message()).await.unwrap();
-    }
-
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
-}
-
-/// An AWS SDK credentials provider whose every lookup fails after a delay.
-#[derive(Debug)]
-struct FailingSdkProvider {
-    counter: Arc<AtomicUsize>,
-}
-
-impl aws_credential_types::provider::ProvideCredentials for FailingSdkProvider {
-    fn provide_credentials<'a>(
-        &'a self,
-    ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        let counter = Arc::clone(&self.counter);
-        aws_credential_types::provider::future::ProvideCredentials::new(async move {
-            counter.fetch_add(1, Ordering::SeqCst);
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            Err(
-                aws_credential_types::provider::error::CredentialsError::provider_error(
-                    "sso session expired",
-                ),
-            )
-        })
-    }
-}
-
-#[tokio::test]
-async fn concurrent_requests_share_one_failed_lookup() {
-    let server = MockServer::start().await;
-    let counter = Arc::new(AtomicUsize::new(0));
-    let mut cfg = bedrock_config("us-east-1");
-    cfg.base_url = Some(server.uri());
-    cfg.sdk_config = Some(
-        aws_config::SdkConfig::builder()
-            .credentials_provider(
-                aws_credential_types::provider::SharedCredentialsProvider::new(
-                    FailingSdkProvider {
-                        counter: Arc::clone(&counter),
-                    },
-                ),
-            )
-            .build(),
-    );
+    cfg.credential_provider = Some(container_chain(&server));
     cfg.skip_auth = false;
     let client = AnthropicBedrock::new(cfg).unwrap();
 
     let message = hello_message();
     let messages = client.messages();
-    let results = futures::future::join_all((0..4).map(|_| messages.create(&message))).await;
+    for result in futures::future::join_all((0..4).map(|_| messages.create(&message))).await {
+        result.unwrap();
+    }
 
-    // Go's singleflight: requests that waited for the lookup take its error
-    // instead of each running their own.
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-    for result in results {
+    assert_eq!(credential_lookups(&server).await, 1);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(signing_key_ids(&requests), ["AKIDCHAIN1"; 4]);
+}
+
+/// A failed lookup's error goes to every request that waited for it, as
+/// `await activeLock` rejects for all of them; the next request looks up
+/// again. The profile's `credential_process` counts the lookups: `fromIni`
+/// and then `fromProcess` each run it, so one lookup runs it twice.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_default_chain_lookup_is_shared_then_tried_again() {
+    let server = MockServer::start().await;
+    let dir = std::env::temp_dir().join(format!(
+        "anthropic-sdk-rs-chain-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let counter = dir.join("runs");
+    let config = dir.join("config");
+    std::fs::write(
+        &config,
+        format!(
+            "[default]\ncredential_process = sleep 0.1; echo run >> '{}'; exit 3\n",
+            counter.display()
+        ),
+    )
+    .unwrap();
+    let chain = from_node_provider_chain(NodeProviderChainOptions {
+        env: Environment::new([
+            ("AWS_CONFIG_FILE".to_owned(), config.display().to_string()),
+            (
+                "AWS_SHARED_CREDENTIALS_FILE".to_owned(),
+                dir.join("credentials").display().to_string(),
+            ),
+            ("AWS_EC2_METADATA_DISABLED".to_owned(), "true".to_owned()),
+            ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
+        ]),
+        http_client: None,
+        profile: None,
+    });
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.credential_provider = Some(Arc::new(chain));
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new(cfg).unwrap();
+    let runs = || {
+        std::fs::read_to_string(&counter)
+            .map(|text| text.lines().count())
+            .unwrap_or(0)
+    };
+
+    let message = hello_message();
+    let messages = client.messages();
+    for result in futures::future::join_all((0..4).map(|_| messages.create(&message))).await {
         let error = result.unwrap_err().to_string();
         assert!(
-            error.contains("from sdk_config") && error.contains("sso session expired"),
+            error.contains("Could not load credentials from any providers"),
             "{error}"
         );
     }
+    assert_eq!(runs(), 2);
 
-    // A request that starts after the failure looks up again.
     assert!(client.messages().create(&message).await.is_err());
-    assert_eq!(counter.load(Ordering::SeqCst), 2);
+    assert_eq!(runs(), 4);
     assert!(server.received_requests().await.unwrap().is_empty());
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
-async fn credentials_inside_the_refresh_buffer_are_fetched_again() {
-    let server = MockServer::start().await;
-    mount_invoke(&server, 2).await;
-
-    let counter = Arc::new(AtomicUsize::new(0));
-    let mut cfg = bedrock_config("us-east-1");
-    cfg.base_url = Some(server.uri());
-    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
-        counter: Arc::clone(&counter),
-        // Expires before the refresh buffer elapses.
-        lifetime: Some(anthropic_sdk_bedrock::CREDENTIALS_REFRESH_BUFFER / 2),
-    }));
-    cfg.skip_auth = false;
-    let client = AnthropicBedrock::new(cfg).unwrap();
-
-    for _ in 0..2 {
-        client.messages().create(&hello_message()).await.unwrap();
-    }
-
-    assert_eq!(counter.load(Ordering::SeqCst), 2);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK2"]);
-}
-
-#[tokio::test]
-async fn custom_credential_provider_takes_precedence_over_sdk_config() {
-    let server = MockServer::start().await;
-    mount_invoke(&server, 1).await;
-
-    let custom = Arc::new(AtomicUsize::new(0));
-    let sdk = Arc::new(AtomicUsize::new(0));
-    let mut cfg = bedrock_config("us-east-1");
-    cfg.base_url = Some(server.uri());
-    cfg.credential_provider = Some(Arc::new(CountingAwsProvider {
-        counter: Arc::clone(&custom),
-    }));
-    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
-        counter: Arc::clone(&sdk),
-        lifetime: None,
-    }));
-    cfg.skip_auth = false;
-    let client = AnthropicBedrock::new(cfg).unwrap();
-
-    client.messages().create(&hello_message()).await.unwrap();
-
-    assert_eq!(custom.load(Ordering::SeqCst), 1);
-    assert_eq!(sdk.load(Ordering::SeqCst), 0);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(signing_key_ids(&requests), ["AKIDEXAMPLE1"]);
-}
-
-#[tokio::test]
-async fn wrapper_and_inherited_resources_share_one_credentials_cache() {
+async fn wrapper_and_inherited_resources_share_one_default_chain() {
     let server = MockServer::start().await;
     mount_invoke(&server, 1).await;
     Mock::given(method("GET"))
@@ -1705,18 +1663,22 @@ async fn wrapper_and_inherited_resources_share_one_credentials_cache() {
         .mount(&server)
         .await;
 
-    let counter = Arc::new(AtomicUsize::new(0));
+    mount_container_credentials(
+        &server,
+        &["AKIDCHAIN1", "AKIDCHAIN2"],
+        std::time::Duration::from_secs(3600),
+        std::time::Duration::ZERO,
+    )
+    .await;
+
     let mut cfg = bedrock_config("us-east-1");
     cfg.base_url = Some(server.uri());
-    cfg.sdk_config = Some(sdk_config_with(CountingSdkProvider {
-        counter: Arc::clone(&counter),
-        lifetime: None,
-    }));
+    cfg.credential_provider = Some(container_chain(&server));
     cfg.skip_auth = false;
     let client = AnthropicBedrock::new(cfg).unwrap();
 
     // The wrapper signs `messages`; the core middleware signs the inherited
-    // beta resource. Both read the same cache.
+    // beta resource. Both resolve through the same chain.
     client.messages().create(&hello_message()).await.unwrap();
     client
         .beta()
@@ -1725,9 +1687,130 @@ async fn wrapper_and_inherited_resources_share_one_credentials_cache() {
         .await
         .unwrap();
 
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
+    assert_eq!(credential_lookups(&server).await, 1);
     let requests = server.received_requests().await.unwrap();
-    assert_eq!(signing_key_ids(&requests), ["AKIDSDK1", "AKIDSDK1"]);
+    assert_eq!(signing_key_ids(&requests), ["AKIDCHAIN1", "AKIDCHAIN1"]);
+}
+
+/// Given neither keys nor a provider, the client builds the default chain
+/// once, on the process environment, for the wrapper and the inherited
+/// resources alike. Its metadata requests go out directly while the
+/// environment names a proxy, as npm's go through Node's `http`, which reads
+/// no proxy variables; the model requests take the caller's client, here one
+/// without a proxy. The metadata endpoint comes from the shared config file,
+/// which the child writes once its server has a port.
+#[tokio::test]
+async fn the_clients_own_default_chain_sends_metadata_requests_directly() {
+    let config = std::env::temp_dir()
+        .join(format!(
+            "anthropic-sdk-rs-default-chain-{}",
+            std::process::id()
+        ))
+        .join("config");
+    let config = config.display().to_string();
+    let credentials = format!("{config}-credentials");
+    if child_env::run_in_child_env(
+        module_path!(),
+        "the_clients_own_default_chain_sends_metadata_requests_directly",
+        &[
+            ("AWS_CONFIG_FILE", &config),
+            ("AWS_SHARED_CREDENTIALS_FILE", &credentials),
+            // The discard port: nothing listens there.
+            ("HTTP_PROXY", "http://127.0.0.1:9"),
+        ],
+    ) {
+        return;
+    }
+
+    let config = std::path::PathBuf::from(
+        anthropic_sdk::internal::env::read_env("AWS_CONFIG_FILE").unwrap(),
+    );
+    let dir = config.parent().unwrap().to_owned();
+    std::fs::create_dir_all(&dir).unwrap();
+    let server = MockServer::start().await;
+    // The proxy variable is in force for a client that reads it.
+    assert!(reqwest::Client::new()
+        .get(server.uri())
+        .send()
+        .await
+        .is_err());
+    std::fs::write(
+        &config,
+        format!(
+            "[default]\nec2_metadata_service_endpoint = {}\n",
+            server.uri()
+        ),
+    )
+    .unwrap();
+
+    Mock::given(method("PUT"))
+        .and(path("/latest/api/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("TOKEN"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/latest/meta-data/iam/security-credentials/"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("test-role"))
+        .mount(&server)
+        .await;
+    let expiration = (time::OffsetDateTime::now_utc() + std::time::Duration::from_secs(3600))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    Mock::given(method("GET"))
+        .and(path("/latest/meta-data/iam/security-credentials/test-role"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "Code": "Success",
+            "Type": "AWS-HMAC",
+            "AccessKeyId": "AKIDIMDS",
+            "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            "Token": "AKIDIMDS-session",
+            "Expiration": expiration,
+        })))
+        .mount(&server)
+        .await;
+    mount_invoke(&server, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models/test-model"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "test-model",
+            "created_at": "2025-01-01T00:00:00Z",
+            "display_name": "Test model",
+            "type": "model"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut cfg = bedrock_config("us-east-1");
+    cfg.base_url = Some(server.uri());
+    cfg.skip_auth = false;
+    let client = AnthropicBedrock::new_with_core_options(
+        cfg,
+        CoreClientOptions {
+            http_client: Some(reqwest::Client::builder().no_proxy().build().unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    client.messages().create(&hello_message()).await.unwrap();
+    client
+        .beta()
+        .models()
+        .retrieve("test-model", None)
+        .await
+        .unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    // One lookup: the token, the role name, its credentials.
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| is_credential_request(request))
+            .count(),
+        3
+    );
+    assert_eq!(signing_key_ids(&requests), ["AKIDIMDS", "AKIDIMDS"]);
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]

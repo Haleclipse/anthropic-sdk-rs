@@ -74,8 +74,8 @@ These are tracked language/runtime adaptations rather than unreviewed implementa
   - authorized user, service account, impersonated service account, and external account with a file or URL source;
   - the metadata server.
   Other types (executable- or AWS-sourced external accounts, `external_account_authorized_user`) fail with an error. Applications can supply a `TokenProvider` instead.
-- Bedrock uses a native Rust SigV4 implementation and AWS SDK credential chain. Its canonical request can be semantically valid without producing byte-identical headers to the JavaScript Smithy signer.
-- Bedrock loads the AWS credential chain once per client and caches credentials until shortly before they expire, as Go does. TS rebuilds the chain on every request and passes explicit keys through a temporarily rewritten `process.env`, which Rust cannot do soundly. `BedrockConfig::sdk_config` is the Rust form of Go `WithConfig`. See PARITY_REPORT § Bedrock loads the AWS credential chain once per client.
+- Bedrock uses a native Rust SigV4 implementation and a port of the TS SDK's default credential chain (`credential_providers`). Its canonical request can be semantically valid without producing byte-identical headers to the JavaScript Smithy signer.
+- Bedrock builds the default chain once per client, and the chain memoizes its credentials as npm's `memoizeChain` does. TS rebuilds the chain on every request. See PARITY_REPORT § Bedrock's default credential chain is a port of the TS one.
 - `reqwest` streams replace Fetch/ReadableStream/AbortController runtime objects.
 - `Deref` and `as_client()` are explicit Rust escape hatches to the core client. The narrowed `messages()`/`beta().messages()` wrappers are the parity surface and intentionally omit unsupported batch/count methods.
 - Provider-inherited multipart endpoints are not considered supported Bedrock service operations; streaming multipart bodies cannot be hashed by the current final SigV4 middleware.

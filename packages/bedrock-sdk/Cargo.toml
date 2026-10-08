@@ -13,7 +13,9 @@ anthropic-sdk = { path = "../.." }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "macros", "sync"] }
+# `process`, `time` and `fs` for the credential chain (`credential_process`,
+# its timeouts and retry delays, the shared config files).
+tokio = { version = "1", features = ["rt", "macros", "sync", "process", "time", "fs"] }
 futures = "0.3"
 bytes = "1"
 pin-project-lite = "0.2"
@@ -22,25 +24,19 @@ hex = "0.4"
 hmac = "0.12"
 sha2 = "0.10"
 crc32fast = "1"
-time = { version = "0.3", features = ["formatting"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 url = "2"
-# No default HTTPS client unless the `default-https-client` feature asks for
-# one: aws-config's links aws-lc-rs. An application with its own TLS stack
-# turns the feature off and passes `BedrockConfig::sdk_config` with an HTTP
-# client of its own.
-aws-config = { version = "1.8.16", default-features = false, features = ["rt-tokio", "credentials-process", "sso"] }
-aws-credential-types = "1.2.14"
-
-[features]
-default = ["default-https-client"]
-# aws-config's default HTTPS client, for the credential chain this crate
-# loads itself when `BedrockConfig::sdk_config` is `None`.
-default-https-client = ["aws-config/default-https-client"]
+# The warnings the credential chain's npm packages print with `console.warn`.
+tracing = "0.1"
+# The local time zone, for `new Date` on a date-time without an offset.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 pretty_assertions = "1"
 wiremock = "0.6"
+# Builds responses for the container-credentials parser without a server.
+http = "1"
 
 # See the root Cargo.toml: tests build with reqwest's own crypto provider.
 [target.'cfg(not(target_os = "android"))'.dev-dependencies]

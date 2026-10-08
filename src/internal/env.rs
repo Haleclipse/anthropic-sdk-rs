@@ -5,10 +5,11 @@
 //! The TypeScript SDK's `readEnv()` is its only reader of the process
 //! environment: it trims the value and returns `undefined` when the variable
 //! is absent. [`read_env`] is likewise this SDK's only reader (`clippy.toml`
-//! rejects `std::env::var*` elsewhere). Rust has no Deno/browser runtime, so
+//! rejects `std::env::var*` elsewhere), with [`process_env`] for the one
+//! consumer that needs the whole object. Rust has no Deno/browser runtime, so
 //! it reads the process environment directly.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 
 /// Read and trim an environment variable.
 ///
@@ -18,6 +19,14 @@ use std::ffi::OsStr;
 #[allow(clippy::disallowed_methods)] // The SDK's single environment reader.
 pub fn read_env(name: &str) -> Option<String> {
     std::env::var_os(name).map(|value| decode(&value))
+}
+
+/// The whole process environment, `process.env` itself, untrimmed: the
+/// Bedrock provider's default credential chain reads it as the npm chain
+/// does, and runs `credential_process` with it.
+#[allow(clippy::disallowed_methods)] // The SDK's single environment reader.
+pub fn process_env() -> Vec<(OsString, OsString)> {
+    std::env::vars_os().collect()
 }
 
 /// Node decodes a non-UTF-8 value with U+FFFD replacements rather than

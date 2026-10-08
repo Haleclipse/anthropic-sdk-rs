@@ -8,14 +8,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
-
-use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
-use aws_credential_types::Credentials;
+use std::sync::{Arc, OnceLock};
 
 use crate::core::streaming::BedrockEventStream;
+use crate::credential_providers::{
+    from_node_provider_chain, Environment, NodeProviderChain, NodeProviderChainOptions,
+};
 use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions};
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::response::{ApiResponse, RawResponse};
@@ -71,30 +69,20 @@ pub trait AwsCredentialProvider: Send + Sync {
 ///   1. Explicit fields on `BedrockConfig`.
 ///   2. Optional [`AwsCredentialProvider`] for custom provider-chain
 ///      resolution, called for every request (TS `providerChainResolver`).
-///   3. The credentials provider of [`BedrockConfig::sdk_config`]
-///      (Go `bedrock.WithConfig(aws.Config)`).
-///   4. The AWS SDK for Rust default provider chain (`aws-config`), matching
-///      the TS SDK's default `@aws-sdk/credential-providers` behavior.
+///   3. The TS SDK's default chain, `fromNodeProviderChain`
+///      ([`crate::credential_providers`]), on the process environment. Its
+///      network sources (container credentials, instance metadata) send
+///      directly, as npm's do through Node's `http` module: with a client of
+///      the chain's own, not the client's proxy settings.
 ///
-/// Steps 3 and 4 follow Go rather than TS:
-///
-/// - **What TS does.** TS builds a new default chain for every request. It
-///   folds explicit keys into that chain by rewriting `process.env` around the
-///   call (`withTempEnv`).
-/// - **When the chain loads.** A client loads the chain once, on the first
-///   request that needs it, as Go's `LoadDefaultConfig` does. `AWS_PROFILE`,
-///   the `AWS_*` variables and `~/.aws` are read at that point.
-/// - **How long credentials are reused.** aws-config does not cache
-///   `SdkConfig::credentials_provider()`, so the client caches its
-///   credentials, as Go's `aws.CredentialsCache` does:
-///   - credentials with an expiry are fetched again
-///     [`CREDENTIALS_REFRESH_BUFFER`] before they expire;
-///   - credentials without one are reused for the client's lifetime, so
-///     rebuild the client after an authentication error.
-/// - **Concurrent requests** wait for one lookup and share its result,
-///   failures included.
-/// - **Scope.** The cache belongs to the client and its clones. A new client
-///   starts empty.
+/// Step 3 differs from TS in one respect: TS builds a new chain for every
+/// request, so it resolves credentials each time. A client here builds the
+/// chain once, on the first request that needs it, and reads the environment
+/// at that point; the chain then memoizes its credentials as npm's
+/// `memoizeChain` does (kept while they do not expire, fetched again in their
+/// last five minutes). The chain belongs to the client and its clones; a new
+/// client starts empty. An application whose environment is not the process's
+/// passes the chain as `credential_provider`, built from its own.
 ///
 /// Resolved credentials are fed into [`crate::core::auth::get_auth_headers`],
 /// which signs a prepared Bedrock Runtime request with AWS SigV4.
@@ -121,22 +109,10 @@ pub struct BedrockConfig {
     /// Maps to TS `providerChainResolver`.
     pub credential_provider: Option<Arc<dyn AwsCredentialProvider>>,
 
-    /// AWS SDK configuration whose credentials provider signs requests.
-    /// Maps to Go `bedrock.WithConfig(aws.Config)`; TS has no equivalent.
-    /// Only the credentials provider is used, cached by the client; its
-    /// identity cache is not. `sdk_config.region()` is ignored: the endpoint
-    /// and the signing region both come from `aws_region`.
-    pub sdk_config: Option<aws_config::SdkConfig>,
-
     /// Skip SigV4 authentication for local proxies/tests.
     /// Maps to TS `skipAuth`.
     pub skip_auth: bool,
 }
-
-/// How long before their expiry cached AWS credentials are fetched again.
-/// This is the nominal default buffer of the AWS SDK for Rust's lazy
-/// identity cache (without its jitter). Go refreshes at expiry by default.
-pub const CREDENTIALS_REFRESH_BUFFER: Duration = Duration::from_secs(10);
 
 /// TS export-name compatibility alias for Bedrock constructor options.
 pub type ClientOptions = BedrockConfig;
@@ -165,10 +141,6 @@ impl std::fmt::Debug for BedrockConfig {
                     .as_ref()
                     .map(|_| "<dyn AwsCredentialProvider>"),
             )
-            .field(
-                "sdk_config",
-                &self.sdk_config.as_ref().map(|_| "<SdkConfig>"),
-            )
             .field("skip_auth", &self.skip_auth)
             .finish()
     }
@@ -182,9 +154,8 @@ impl BedrockConfig {
     /// Falls back to `"us-east-1"` when `AWS_REGION` is unset.
     ///
     /// AWS access-key environment variables are intentionally not copied into
-    /// the config. Like the TS SDK, Rust lets the AWS SDK default provider
-    /// chain resolve them so profile/SSO/IMDS precedence stays with the AWS
-    /// SDK implementation.
+    /// the config. Like the TS SDK, the default provider chain resolves them,
+    /// so its precedence over profiles and instance metadata is the chain's.
     pub fn from_env() -> Self {
         // TS `client.ts:61-62`: both use `??`, so a set-but-empty variable is
         // kept as `""` rather than replaced by the default.
@@ -199,26 +170,25 @@ impl BedrockConfig {
             aws_session_token: None,
             base_url,
             credential_provider: None,
-            sdk_config: None,
             skip_auth: false,
         }
     }
 }
 
-/// A client's Bedrock config plus the AWS credentials it has resolved. The
-/// wrapper resources and the signing middleware hold clones, so one client
-/// loads the AWS provider chain once.
+/// A client's Bedrock config plus its default credential chain. The wrapper
+/// resources and the signing middleware hold clones, so one client builds the
+/// chain once.
 #[derive(Clone, Debug)]
 struct BedrockAuth {
     config: BedrockConfig,
-    aws: Arc<AwsCredentialsCache>,
+    default_chain: Arc<OnceLock<NodeProviderChain>>,
 }
 
 impl BedrockAuth {
     fn new(config: BedrockConfig) -> Self {
         Self {
             config,
-            aws: Arc::default(),
+            default_chain: Arc::default(),
         }
     }
 
@@ -236,7 +206,6 @@ impl BedrockAuth {
                     aws_session_token: credentials.session_token,
                     base_url: config.base_url.clone(),
                     credential_provider: None,
-                    sdk_config: None,
                     skip_auth: false,
                 }))
             }
@@ -250,138 +219,17 @@ impl BedrockAuth {
         if let Some(provider) = &self.config.credential_provider {
             return provider.get_credentials().await;
         }
-        self.aws.credentials(&self.config).await
-    }
-}
-
-/// The AWS credentials provider, loaded once, and the outcome of its last
-/// lookup. Maps to Go `LoadDefaultConfig` + `aws.CredentialsCache`.
-#[derive(Default)]
-struct AwsCredentialsCache {
-    provider: tokio::sync::OnceCell<SharedCredentialsProvider>,
-    last: tokio::sync::Mutex<LastLookup>,
-    /// Lookups finished so far. Read before waiting for `last`, it tells a
-    /// waiter whether a lookup finished while it waited.
-    lookups: AtomicU64,
-}
-
-#[derive(Default)]
-struct LastLookup {
-    credentials: Option<Credentials>,
-    /// The last lookup's error, until a lookup succeeds.
-    error: Option<String>,
-}
-
-impl std::fmt::Debug for AwsCredentialsCache {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AwsCredentialsCache")
-            .field("provider_loaded", &self.provider.initialized())
-            .finish_non_exhaustive()
-    }
-}
-
-impl AwsCredentialsCache {
-    async fn credentials(&self, config: &BedrockConfig) -> Result<AwsCredentials, ApiError> {
-        let lookups_before_wait = self.lookups.load(Ordering::Acquire);
-        // Held across the lookup: requests that wait for it take its result,
-        // a failure included, like Go's singleflight in `aws.CredentialsCache`.
-        let mut last = self.last.lock().await;
-        if let Some(credentials) = last.credentials.as_ref().filter(|credentials| {
-            credentials
-                .expiry()
-                .is_none_or(|expiry| expiry > SystemTime::now() + CREDENTIALS_REFRESH_BUFFER)
-        }) {
-            return Ok(aws_credentials(credentials));
-        }
-        if self.lookups.load(Ordering::Acquire) != lookups_before_wait {
-            if let Some(error) = &last.error {
-                return Err(ApiError::Sdk(error.clone()));
-            }
-        }
-
-        let result = self.lookup(config).await;
-        self.lookups.fetch_add(1, Ordering::Release);
-        match result {
-            Ok(credentials) => {
-                let resolved = aws_credentials(&credentials);
-                *last = LastLookup {
-                    credentials: Some(credentials),
-                    error: None,
-                };
-                Ok(resolved)
-            }
-            Err(error) => {
-                last.error = Some(error.clone());
-                Err(ApiError::Sdk(error))
-            }
-        }
-    }
-
-    async fn lookup(&self, config: &BedrockConfig) -> Result<Credentials, String> {
-        let source = if config.sdk_config.is_some() {
-            "sdk_config"
-        } else {
-            "default provider chain"
-        };
-        let provider = self
-            .provider
-            .get_or_try_init(|| load_credentials_provider(config))
+        self.default_chain
+            .get_or_init(|| {
+                from_node_provider_chain(NodeProviderChainOptions {
+                    env: Environment::from_process(),
+                    // npm's network sources send directly.
+                    http_client: None,
+                    profile: None,
+                })
+            })
+            .get_credentials()
             .await
-            .map_err(|reason| {
-                format!("Failed to resolve AWS credentials from {source}: {reason}")
-            })?;
-        provider.provide_credentials().await.map_err(|error| {
-            format!(
-                "Failed to resolve AWS credentials from {source}: {}",
-                error_chain(&error)
-            )
-        })
-    }
-}
-
-/// Without the `default-https-client` feature there is no HTTP client to load
-/// the default chain with (aws-smithy asserts on one), so an application that
-/// turns it off must pass `sdk_config`; without one this is an error.
-async fn load_credentials_provider(
-    config: &BedrockConfig,
-) -> Result<SharedCredentialsProvider, &'static str> {
-    let sdk_config = match &config.sdk_config {
-        Some(sdk_config) => Cow::Borrowed(sdk_config),
-        #[cfg(feature = "default-https-client")]
-        None => Cow::Owned(
-            aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(aws_config::Region::new(config.aws_region.clone()))
-                .load()
-                .await,
-        ),
-        #[cfg(not(feature = "default-https-client"))]
-        None => {
-            return Err("no sdk_config was passed and the default-https-client feature is off");
-        }
-    };
-    sdk_config
-        .credentials_provider()
-        .ok_or("no credentials provider was configured")
-}
-
-/// `error` and its sources, joined with `": "`. `CredentialsError` displays
-/// only its kind; the provider's reason is its source.
-fn error_chain(error: &dyn std::error::Error) -> String {
-    let mut message = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        message.push_str(": ");
-        message.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    message
-}
-
-fn aws_credentials(credentials: &Credentials) -> AwsCredentials {
-    AwsCredentials {
-        access_key_id: credentials.access_key_id().to_owned(),
-        secret_access_key: credentials.secret_access_key().to_owned(),
-        session_token: credentials.session_token().map(str::to_owned),
     }
 }
 
@@ -496,7 +344,8 @@ pub fn create_client_with_core_options(
     config: BedrockConfig,
     core_options: CoreClientOptions,
 ) -> Result<Anthropic, ApiError> {
-    build_bedrock_client(&BedrockAuth::new(config), core_options)
+    let auth = BedrockAuth::new(config);
+    build_bedrock_client(&auth, core_options)
 }
 
 fn build_bedrock_client(
