@@ -15,7 +15,7 @@ use futures::{Stream as FuturesStream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::core::error::ApiError;
-use crate::internal::decoders::line::{find_double_newline_index, LineDecoder};
+use crate::internal::decoders::line::{LineDecoder, find_double_newline_index};
 
 // ---------------------------------------------------------------------------
 // ServerSentEvent

@@ -334,7 +334,11 @@ async fn unported_sources_are_unavailable_without_falling_back_to_imds() {
     let imds = serve(|_, _| (200, token_body("node-identity", 3600))).await;
     let cases: [(&[&'static str], &str); 5] = [
         (
-            &["IDENTITY_ENDPOINT", "IDENTITY_HEADER", "IDENTITY_SERVER_THUMBPRINT"],
+            &[
+                "IDENTITY_ENDPOINT",
+                "IDENTITY_HEADER",
+                "IDENTITY_SERVER_THUMBPRINT",
+            ],
             "ManagedIdentityCredential: ServiceFabric managed identity is not supported by anthropic-sdk-foundry.",
         ),
         (
@@ -350,7 +354,11 @@ async fn unported_sources_are_unavailable_without_falling_back_to_imds() {
             "ManagedIdentityCredential: AzureArc managed identity is not supported by anthropic-sdk-foundry.",
         ),
         (
-            &["AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_FEDERATED_TOKEN_FILE"],
+            &[
+                "AZURE_CLIENT_ID",
+                "AZURE_TENANT_ID",
+                "AZURE_FEDERATED_TOKEN_FILE",
+            ],
             "ManagedIdentityCredential: The token exchange managed identity (AKS workload identity) is not supported by anthropic-sdk-foundry.",
         ),
     ];
@@ -473,7 +481,9 @@ async fn errors_are_rethrown_as_the_official_get_token_rethrows_them() {
         (
             200,
             "{}",
-            CredentialError::AuthenticationRequired("Response had no \"expiresOn\" property.".to_owned()),
+            CredentialError::AuthenticationRequired(
+                "Response had no \"expiresOn\" property.".to_owned(),
+            ),
         ),
     ] {
         reset_process_state();

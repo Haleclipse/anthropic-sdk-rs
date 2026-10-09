@@ -12,7 +12,7 @@ use crate::resources::messages::TextCitation;
 
 // Re-export stable parser items for callers that used the previous Rust module
 // as a stable-parser alias.
-pub use crate::sdk_lib::parser::{maybe_parse_message, parse_message, ParsedMessage};
+pub use crate::sdk_lib::parser::{ParsedMessage, maybe_parse_message, parse_message};
 
 /// Rust equivalent of TS `BetaParseableMessageCreateParams`.
 pub type BetaParseableMessageCreateParams = BetaMessageCreateParams;
@@ -225,9 +225,10 @@ mod tests {
         ]);
 
         let err = parse_beta_message::<TestOutput>(&msg).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("Failed to parse structured output"));
+        assert!(
+            err.to_string()
+                .contains("Failed to parse structured output")
+        );
     }
 
     #[test]

@@ -159,9 +159,10 @@ async fn messages_parse_returns_validation_errors() {
         .parse::<Weather>(&parse_params())
         .await
         .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Failed to parse structured output"));
+    assert!(
+        err.to_string()
+            .contains("Failed to parse structured output")
+    );
 }
 
 #[tokio::test]

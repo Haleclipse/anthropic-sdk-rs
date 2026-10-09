@@ -251,10 +251,12 @@ async fn beta_skills_retrieve_list_and_delete_send_beta_headers_and_query() {
     assert_eq!(deleted.id, "skill_123");
 
     let requests = server.received_requests().await.unwrap();
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap()
-            == "custom-beta,skills-2025-10-02"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap()
+                == "custom-beta,skills-2025-10-02")
+    );
 
     let list_request = requests
         .iter()
@@ -388,10 +390,12 @@ async fn beta_skills_request_options_path_override_applies_to_create_retrieve_li
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 4);
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap()
-            == "custom-beta,skills-2025-10-02"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap()
+                == "custom-beta,skills-2025-10-02")
+    );
 
     let create_request = requests
         .iter()

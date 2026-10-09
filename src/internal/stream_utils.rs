@@ -33,7 +33,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::{stream, StreamExt};
+    use futures::{StreamExt, stream};
 
     #[tokio::test]
     async fn readable_stream_to_async_iterable_identity_preserves_items() {

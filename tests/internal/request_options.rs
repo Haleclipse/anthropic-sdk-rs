@@ -469,9 +469,11 @@ async fn client_options_debug_logging_redacts_sensitive_headers_like_ts_format_r
         })
         .expect("structured request-start details should be captured");
     assert_eq!(request_details["method"], "get");
-    assert!(request_details["url"]
-        .as_str()
-        .is_some_and(|url| url.ends_with("/v1/logging-redaction")));
+    assert!(
+        request_details["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("/v1/logging-redaction"))
+    );
     assert_eq!(request_details["headers"]["x-api-key"], "***");
     assert_eq!(request_details["headers"]["authorization"], "***");
     assert_eq!(request_details["headers"]["cookie"], "***");
@@ -481,9 +483,11 @@ async fn client_options_debug_logging_redacts_sensitive_headers_like_ts_format_r
         .find(|(level, message, _)| *level == LogLevel::Debug && message.contains("response start"))
         .expect("structured response-start details should be captured");
     assert_eq!(response_details["status"], 200);
-    assert!(response_details["url"]
-        .as_str()
-        .is_some_and(|url| url.ends_with("/v1/logging-redaction")));
+    assert!(
+        response_details["url"]
+            .as_str()
+            .is_some_and(|url| url.ends_with("/v1/logging-redaction"))
+    );
     assert!(response_details["durationMs"].is_number());
 }
 
@@ -556,8 +560,8 @@ async fn client_options_retry_logging_includes_request_log_id_and_retry_of_like_
 }
 
 #[tokio::test]
-async fn core_post_multipart_helper_uses_common_request_pipeline_like_ts_multipart_form_request_options(
-) {
+async fn core_post_multipart_helper_uses_common_request_pipeline_like_ts_multipart_form_request_options()
+ {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
@@ -711,11 +715,13 @@ async fn request_options_default_base_url_used_only_when_client_base_is_default(
         .await
         .unwrap();
     assert_eq!(value, serde_json::json!({"base": "explicit"}));
-    assert!(ignored_default_base_server
-        .received_requests()
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        ignored_default_base_server
+            .received_requests()
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -1108,9 +1114,11 @@ async fn request_options_can_remove_retry_count_header_like_ts() {
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("x-stainless-retry-count").is_none()));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("x-stainless-retry-count").is_none())
+    );
 }
 
 #[tokio::test]
@@ -1141,11 +1149,13 @@ async fn request_options_can_overwrite_retry_count_header_like_ts() {
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
-    assert!(requests.iter().all(|request| request
-        .headers
-        .get("x-stainless-retry-count")
-        .and_then(|value| value.to_str().ok())
-        == Some("42")));
+    assert!(requests.iter().all(|request| {
+        request
+            .headers
+            .get("x-stainless-retry-count")
+            .and_then(|value| value.to_str().ok())
+            == Some("42")
+    }));
 }
 
 #[tokio::test]
@@ -1181,9 +1191,11 @@ async fn default_headers_can_remove_retry_count_header_like_ts_omit_retry_count_
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("x-stainless-retry-count").is_none()));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("x-stainless-retry-count").is_none())
+    );
 }
 
 #[tokio::test]

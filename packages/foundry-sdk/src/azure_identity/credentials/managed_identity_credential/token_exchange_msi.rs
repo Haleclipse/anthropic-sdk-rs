@@ -5,8 +5,8 @@
 //! `WorkloadIdentityCredential`) is not, and the credential reports the flow
 //! unsupported instead.
 
-use crate::azure_identity::js::JsTruthy;
 use crate::azure_identity::Environment;
+use crate::azure_identity::js::JsTruthy;
 
 /// Maps to: `:15-24` `tokenExchangeMsi.isAvailable`: a client id (the
 /// credential's, else `AZURE_CLIENT_ID`), `AZURE_TENANT_ID` and

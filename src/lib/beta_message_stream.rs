@@ -16,7 +16,7 @@ use crate::resources::beta::messages::{
     BetaContentBlock, BetaContentBlockDelta, BetaMessage, BetaMessageDeltaUsage,
     BetaMessageStreamEvent, BetaServerToolInput, BetaServerToolName, BetaToolCaller, BetaToolInput,
 };
-use crate::sdk_lib::beta_parser::{parse_beta_message, ParsedBetaMessage};
+use crate::sdk_lib::beta_parser::{ParsedBetaMessage, parse_beta_message};
 use crate::vendor::partial_json_parser::partial_parse;
 
 /// Content block variants whose `input` is incrementally reconstructed from

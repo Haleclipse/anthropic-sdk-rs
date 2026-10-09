@@ -3,13 +3,13 @@
 use std::any::TypeId;
 
 use anthropic_sdk::{
-    toFile, to_file, APIConnectionError, APIConnectionTimeoutError, APIError, APIPromise,
-    APIResponse, APIUserAbortError, Anthropic, AnthropicError, ApiError, ApiResponse,
-    AuthenticationError, AutoParseableOutputFormat, BadRequestError, BaseAnthropic, ClientOptions,
-    ConflictError, ExtractParsedContentFromParams, InternalServerError, NotFoundError, PagePromise,
+    AI_PROMPT, APIConnectionError, APIConnectionTimeoutError, APIError, APIPromise, APIResponse,
+    APIUserAbortError, Anthropic, AnthropicError, ApiError, ApiResponse, AuthenticationError,
+    AutoParseableOutputFormat, BadRequestError, BaseAnthropic, ClientOptions, ConflictError,
+    ExtractParsedContentFromParams, HUMAN_PROMPT, InternalServerError, NotFoundError, PagePromise,
     ParseableMessageCreateParams, ParsedContentBlock, ParsedMessage, PermissionDeniedError,
-    RateLimitError, RawResponse, ToFileInput, UnprocessableEntityError, Uploadable, AI_PROMPT,
-    HUMAN_PROMPT, VERSION,
+    RateLimitError, RawResponse, ToFileInput, UnprocessableEntityError, Uploadable, VERSION,
+    to_file, toFile,
 };
 
 fn assert_same_type<T: 'static, U: 'static>() {
@@ -141,11 +141,13 @@ fn client_ts_style_property_and_utility_aliases_are_available() {
         client.calculateNonstreamingTimeout(1024, None).unwrap(),
         600_000
     );
-    assert!(client
-        .calculate_nonstreaming_timeout(25_000, None)
-        .unwrap_err()
-        .to_string()
-        .contains("#long-requests"));
+    assert!(
+        client
+            .calculate_nonstreaming_timeout(25_000, None)
+            .unwrap_err()
+            .to_string()
+            .contains("#long-requests")
+    );
 }
 
 #[test]

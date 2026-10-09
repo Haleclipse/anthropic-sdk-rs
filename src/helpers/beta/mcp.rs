@@ -18,8 +18,8 @@ use crate::resources::beta::messages::types::{
 };
 use crate::resources::messages::{CacheControlEphemeral, CitationsConfigParam, TextCitationParam};
 pub use crate::sdk_lib::stainless_helper_header::{
-    collectStainlessHelpers, collect_stainless_helpers, stainlessHelperHeader,
-    stainless_helper_header, SDK_HELPER_SYMBOL,
+    SDK_HELPER_SYMBOL, collect_stainless_helpers, collectStainlessHelpers, stainless_helper_header,
+    stainlessHelperHeader,
 };
 use crate::sdk_lib::tools::{RunnableTool, ToolError};
 

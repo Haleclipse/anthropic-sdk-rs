@@ -13,8 +13,8 @@ use anthropic_sdk_vertex::google_auth::{Environment, NO_ADC_FOUND};
 use anthropic_sdk_vertex::{
     AnthropicVertex, GoogleAuth, GoogleAuthOptions, TokenProvider, VertexConfig,
 };
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -22,8 +22,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[path = "../../../tests/support/child_env.rs"]
 mod child_env;
 
-const MODEL_PATH: &str =
-    "/projects/adc-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-20250514:rawPredict";
+const MODEL_PATH: &str = "/projects/adc-project/locations/us-east5/publishers/anthropic/models/claude-sonnet-4-20250514:rawPredict";
 
 fn credentials_path(test: &str) -> String {
     std::env::temp_dir()

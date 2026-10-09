@@ -278,10 +278,12 @@ async fn beta_files_retrieve_list_and_delete_send_beta_headers_and_query() {
     assert_eq!(deleted.id, "file_123");
 
     let requests = server.received_requests().await.unwrap();
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap()
-            == "custom-beta,files-api-2025-04-14"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap()
+                == "custom-beta,files-api-2025-04-14")
+    );
     let list_request = requests
         .iter()
         .find(|request| request.url.path() == "/v1/files" && request.method == "GET")
@@ -416,10 +418,12 @@ async fn beta_files_request_options_path_override_applies_to_list_retrieve_delet
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 4);
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap()
-            == "custom-beta,files-api-2025-04-14"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap()
+                == "custom-beta,files-api-2025-04-14")
+    );
 
     let list_request = requests
         .iter()

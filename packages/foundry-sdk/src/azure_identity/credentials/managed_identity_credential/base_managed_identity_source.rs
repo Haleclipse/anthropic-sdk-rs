@@ -12,7 +12,7 @@
 
 use serde_json::Value;
 
-use super::managed_identity_application::{save_access_token, ManagedIdentityId};
+use super::managed_identity_application::{ManagedIdentityId, save_access_token};
 use super::{IdentityClient, MsiError};
 use crate::azure_identity::js::{js_string, js_truthy, string_to_number};
 use crate::azure_identity::msal::auth_error::MsalError;
@@ -210,11 +210,7 @@ fn is_truthy(value: &Option<Value>) -> bool {
 
 /// `a || b`.
 fn js_or(left: Option<Value>, right: Option<Value>) -> Option<Value> {
-    if is_truthy(&left) {
-        left
-    } else {
-        right
-    }
+    if is_truthy(&left) { left } else { right }
 }
 
 /// `Number(value)` of a JSON value.

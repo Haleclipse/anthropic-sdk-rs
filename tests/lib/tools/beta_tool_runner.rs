@@ -3,8 +3,8 @@
 // Mirrors TS SDK lib/tools/BetaToolRunner behavior for the non-streaming
 // automatic tool loop.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anthropic_sdk::resources::beta::messages::{
     BetaContentBlockParam, BetaMessageContent, BetaMessageCreateParams, BetaMessageParam,
@@ -655,9 +655,11 @@ async fn beta_tool_runner_includes_helper_marked_initial_messages_in_stainless_h
         body["messages"][0]["content"][0]["text"],
         "helper-created content"
     );
-    assert!(body["messages"][0]["content"][0]
-        .get("stainless_helpers")
-        .is_none());
+    assert!(
+        body["messages"][0]["content"][0]
+            .get("stainless_helpers")
+            .is_none()
+    );
 }
 
 #[tokio::test]

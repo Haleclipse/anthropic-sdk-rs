@@ -1,11 +1,11 @@
 // Mirrors TS SDK tests/api-resources/MessageStream.test.ts fixture cases.
 
+use anthropic_sdk::ApiError;
 use anthropic_sdk::resources::messages::{
     ContentBlock, Message, MessageStreamEvent, ServiceTier, StopReason,
 };
 use anthropic_sdk::sdk_lib::message_stream::{MessageStream, SseStream};
-use anthropic_sdk::ApiError;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 
 const EXPECTED_BASIC_EVENT_TYPES: &[&str] = &[
     "message_start",

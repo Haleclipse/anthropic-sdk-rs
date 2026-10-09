@@ -17,8 +17,8 @@ use serde::de::DeserializeOwned;
 
 use crate::core::error::ApiError;
 use crate::helpers::json_schema::{
-    json_schema_format_with_options, json_schema_output_format_with_options,
-    JsonSchemaOutputFormatOptions,
+    JsonSchemaOutputFormatOptions, json_schema_format_with_options,
+    json_schema_output_format_with_options,
 };
 use crate::resources::messages::{JsonOutputFormat, OutputConfig};
 

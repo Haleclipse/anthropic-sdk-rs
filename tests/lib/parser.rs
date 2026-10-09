@@ -3,11 +3,11 @@
 use anthropic_sdk::resources::beta::messages::{BetaContentBlock, BetaMessage};
 use anthropic_sdk::resources::messages::{ContentBlock, Message};
 use anthropic_sdk::sdk_lib::beta_parser::{
-    maybe_parse_beta_message, parse_beta_message, parsed_beta_message_without_parsing,
-    ParsedBetaContentBlock,
+    ParsedBetaContentBlock, maybe_parse_beta_message, parse_beta_message,
+    parsed_beta_message_without_parsing,
 };
 use anthropic_sdk::sdk_lib::parser::{
-    maybe_parse_message, parse_message, parsed_message_without_parsing, ParsedContentBlock,
+    ParsedContentBlock, maybe_parse_message, parse_message, parsed_message_without_parsing,
 };
 use serde::Deserialize;
 

@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::core::streaming::BedrockEventStream;
 use crate::credential_providers::{
-    from_node_provider_chain, Environment, NodeProviderChain, NodeProviderChainOptions,
+    Environment, NodeProviderChain, NodeProviderChainOptions, from_node_provider_chain,
 };
 use anthropic_sdk::client::{Anthropic, ClientOptions as CoreClientOptions};
 use anthropic_sdk::core::error::ApiError;
@@ -28,11 +28,11 @@ use anthropic_sdk::resources::completions::{Completion, CompletionCreateParams};
 use anthropic_sdk::resources::messages::{Message, MessageCreateParams, MessageStreamEvent};
 use anthropic_sdk::sdk_lib::beta_message_stream::BetaMessageStream;
 use anthropic_sdk::sdk_lib::beta_parser::{
-    parse_beta_message, parsed_beta_message_without_parsing, ParsedBetaMessage,
+    ParsedBetaMessage, parse_beta_message, parsed_beta_message_without_parsing,
 };
 use anthropic_sdk::sdk_lib::message_stream::MessageStream;
 use anthropic_sdk::sdk_lib::parser::{
-    parse_message, parsed_message_without_parsing, ParsedMessage,
+    ParsedMessage, parse_message, parsed_message_without_parsing,
 };
 use anthropic_sdk::sdk_lib::tools::{
     BetaMessageCreateClient, BetaToolRunner, BetaToolRunnerParams,
@@ -41,7 +41,7 @@ use anthropic_sdk::{HttpMiddleware, RequestOptions};
 
 pub use anthropic_sdk::BaseAnthropic;
 
-use crate::core::auth::{get_auth_headers, AwsCredentials};
+use crate::core::auth::{AwsCredentials, get_auth_headers};
 
 /// Bedrock-specific API version header value.
 /// Maps to: TS AnthropicBedrock.ANTHROPIC_VERSION

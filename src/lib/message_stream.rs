@@ -16,7 +16,7 @@ use crate::core::error::ApiError;
 use crate::resources::messages::{
     ContentBlock, ContentBlockDelta, Message, MessageDeltaUsage, MessageStreamEvent,
 };
-use crate::sdk_lib::parser::{parse_message, ParsedMessage};
+use crate::sdk_lib::parser::{ParsedMessage, parse_message};
 use crate::vendor::partial_json_parser::partial_parse;
 
 // ---------------------------------------------------------------------------
@@ -556,8 +556,8 @@ mod tests {
     use super::*;
     use crate::resources::messages::*;
     use crate::sdk_lib::parser::ParsedContentBlock;
-    use futures::stream;
     use futures::StreamExt;
+    use futures::stream;
 
     /// Helper: build a minimal `MessageStreamEvent::MessageStart`.
     fn msg_start_event() -> MessageStreamEvent {

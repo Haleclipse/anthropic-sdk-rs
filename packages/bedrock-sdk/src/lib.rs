@@ -6,10 +6,10 @@ pub mod core;
 pub mod credential_providers;
 
 pub use client::{
-    create_client, create_client_with_core_options, rewrite_url, AnthropicBedrock,
-    AwsCredentialProvider, BaseAnthropic, BedrockConfig, ClientOptions, ANTHROPIC_VERSION,
+    ANTHROPIC_VERSION, AnthropicBedrock, AwsCredentialProvider, BaseAnthropic, BedrockConfig,
+    ClientOptions, create_client, create_client_with_core_options, rewrite_url,
 };
-pub use core::auth::{get_auth_headers, AwsCredentials};
+pub use core::auth::{AwsCredentials, get_auth_headers};
 pub use core::streaming::BedrockEventStream;
 
 /// TS-style module alias matching `packages/bedrock-sdk/src/AWS_restJson1.ts`.

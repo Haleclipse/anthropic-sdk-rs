@@ -20,9 +20,9 @@ use chrono::{Days, Local, TimeZone};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
-use crate::azure_identity::js::{js_string, parse_int, template_string, time_clip, JsTruthy};
+use crate::azure_identity::js::{JsTruthy, js_string, parse_int, template_string, time_clip};
 use crate::azure_identity::{
-    timestamp, AccessToken, CredentialError, Environment, TokenCredential,
+    AccessToken, CredentialError, Environment, TokenCredential, timestamp,
 };
 
 /// `azureCliPublicErrorMessages` (`:15-21`), less the claims one.
@@ -356,11 +356,7 @@ fn parse_iso_date(text: &str) -> Option<f64> {
             if sign == b'-' && year == 0 {
                 return None;
             }
-            if sign == b'-' {
-                -year
-            } else {
-                year
-            }
+            if sign == b'-' { -year } else { year }
         }
         _ => scanner.digits(4, 4)?,
     };

@@ -4,11 +4,11 @@ use std::collections::{HashMap, HashSet};
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 
+use crate::RequestOptions;
 use crate::client::Anthropic;
 use crate::core::error::ApiError;
 use crate::resources::beta::messages as beta_messages;
 use crate::resources::messages::*;
-use crate::RequestOptions;
 
 use super::compaction_control::{
     CompactionControl, DEFAULT_SUMMARY_PROMPT, DEFAULT_TOKEN_THRESHOLD,

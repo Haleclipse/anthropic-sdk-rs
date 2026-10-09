@@ -7,6 +7,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
+use anthropic_sdk::RequestOptions;
 use anthropic_sdk::client::{
     Anthropic, AuthTokenProvider, ClientOptions as CoreClientOptions, Nullable,
 };
@@ -31,7 +32,6 @@ use anthropic_sdk::sdk_lib::parser::ParsedMessage;
 use anthropic_sdk::sdk_lib::tools::{
     BetaMessageCreateClient, BetaToolRunner, BetaToolRunnerParams,
 };
-use anthropic_sdk::RequestOptions;
 
 pub use anthropic_sdk::BaseAnthropic;
 

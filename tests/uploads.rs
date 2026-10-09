@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anthropic_sdk::core::uploads::{to_file, Uploadable};
+use anthropic_sdk::core::uploads::{Uploadable, to_file};
 
 fn temp_upload_path(name: &str, contents: &[u8]) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -76,7 +76,8 @@ fn uploadable_path_read_error_is_helpful() {
     let file = Uploadable::from_path(&missing);
     let err = file.to_part(true).unwrap_err();
     assert!(err.to_string().contains("failed to read upload file"));
-    assert!(err
-        .to_string()
-        .contains(&missing.to_string_lossy().to_string()));
+    assert!(
+        err.to_string()
+            .contains(&missing.to_string_lossy().to_string())
+    );
 }

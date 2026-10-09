@@ -3,11 +3,11 @@
 
 use anthropic_sdk::core::error::ApiError;
 use anthropic_sdk::core::streaming::{
-    _iterSSEMessages, fromReadableStream, fromSSEResponse, from_readable_stream, from_sse_response,
-    iter_sse_messages, toReadableStream, to_readable_stream, Stream as AnthropicStream,
+    _iterSSEMessages, Stream as AnthropicStream, from_readable_stream, from_sse_response,
+    fromReadableStream, fromSSEResponse, iter_sse_messages, to_readable_stream, toReadableStream,
 };
 use bytes::Bytes;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use serde_json::json;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

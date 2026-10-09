@@ -8,20 +8,20 @@ use std::time::{Duration, Instant, SystemTime};
 use rand::RngExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::Form;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
+use crate::VERSION;
 use crate::core::error::ApiError;
 use crate::core::response::{ApiResponse, RawResponse};
 use crate::internal::detect_platform::get_platform_headers;
 use crate::internal::env::read_env;
 use crate::internal::log::format_request_details;
-use crate::internal::query::{stringify_query, QueryValue};
+use crate::internal::query::{QueryValue, stringify_query};
 use crate::internal::request_options::{
     HttpMiddleware, JsonBodyPatch, RawRequestBody, RequestOptions,
 };
-use crate::VERSION;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants

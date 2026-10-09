@@ -13,15 +13,15 @@ use std::sync::{Arc, Mutex};
 
 use super::app_service::AppService;
 use super::base_managed_identity_source::{
-    acquire_token_with_managed_identity, ManagedIdentityRequest,
+    ManagedIdentityRequest, acquire_token_with_managed_identity,
 };
 use super::imds::Imds;
 use super::managed_identity_application::{ManagedIdentityId, ManagedIdentityIdType};
 use super::{
-    app_service, azure_arc, cloud_shell, machine_learning, service_fabric, IdentityClient, MsiError,
+    IdentityClient, MsiError, app_service, azure_arc, cloud_shell, machine_learning, service_fabric,
 };
-use crate::azure_identity::msal::authentication_result::AuthenticationResult;
 use crate::azure_identity::Environment;
+use crate::azure_identity::msal::authentication_result::AuthenticationResult;
 
 /// Maps to: `src/utils/Constants.ts` `ManagedIdentitySourceNames`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

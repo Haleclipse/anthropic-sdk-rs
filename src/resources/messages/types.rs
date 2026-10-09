@@ -15,7 +15,7 @@ use crate::core::response::{ApiResponse, RawResponse};
 use crate::core::streaming::SseStream;
 use crate::internal::request_options::RequestOptions;
 use crate::sdk_lib::message_stream::MessageStream;
-use crate::sdk_lib::parser::{parse_message, parsed_message_without_parsing, ParsedMessage};
+use crate::sdk_lib::parser::{ParsedMessage, parse_message, parsed_message_without_parsing};
 
 // ==========================================================================
 // TS exported-name compatibility aliases
@@ -2154,12 +2154,14 @@ mod tests {
             "Using Claude with claude-opus-4-6 and 'thinking.type=enabled' is deprecated. Use 'thinking.type=adaptive' instead which results in better model performance in our testing: https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking"
         );
 
-        assert!(message_create_warning_messages(
-            "claude-opus-4-6",
-            Some(&ThinkingConfig::Adaptive),
-            false
-        )
-        .is_empty());
+        assert!(
+            message_create_warning_messages(
+                "claude-opus-4-6",
+                Some(&ThinkingConfig::Adaptive),
+                false
+            )
+            .is_empty()
+        );
     }
 
     #[test]

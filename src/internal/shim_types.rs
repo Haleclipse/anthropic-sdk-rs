@@ -33,7 +33,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::{stream, StreamExt};
+    use futures::{StreamExt, stream};
 
     #[tokio::test]
     async fn readable_stream_type_alias_boxes_futures_stream() {

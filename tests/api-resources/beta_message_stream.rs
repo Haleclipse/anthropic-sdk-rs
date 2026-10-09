@@ -3,6 +3,7 @@
 // Mirrors TS SDK beta stream accumulation behavior for beta-only fields and
 // content block deltas.
 
+use anthropic_sdk::ApiError;
 use anthropic_sdk::resources::beta::messages::{
     BetaContentBlock, BetaContentBlockDelta, BetaContextManagementAppliedEdit,
     BetaContextManagementResponse, BetaIterationUsage, BetaMessage, BetaMessageDelta,
@@ -10,8 +11,7 @@ use anthropic_sdk::resources::beta::messages::{
 };
 use anthropic_sdk::sdk_lib::beta_message_stream::{BetaMessageStream, BetaSseStream};
 use anthropic_sdk::sdk_lib::beta_parser::ParsedBetaContentBlock;
-use anthropic_sdk::ApiError;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 
 fn message_start() -> BetaMessageStreamEvent {
     BetaMessageStreamEvent::MessageStart {

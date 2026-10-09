@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use crate::core::error::ApiError;
-use crate::helpers::json_schema::{json_schema_format_with_options, JsonSchemaOutputFormatOptions};
+use crate::helpers::json_schema::{JsonSchemaOutputFormatOptions, json_schema_format_with_options};
 use crate::resources::beta::messages::BetaToolResultContent;
 use crate::resources::messages::{JsonOutputFormat, OutputConfig};
 use crate::sdk_lib::tools::{BetaRunnableTool, RunnableTool, ToolError};
@@ -80,9 +80,9 @@ impl BetaJsonSchemaToolOptions {
         input_schema: serde_json::Value,
         description: impl Into<String>,
         run: impl Fn(serde_json::Value) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         Self {
             name: name.into(),

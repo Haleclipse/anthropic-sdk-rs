@@ -8,10 +8,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use futures::future::{BoxFuture, Shared};
 use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
 
-use super::{now_ms, AccessToken, CredentialError, TokenCredential};
+use super::{AccessToken, CredentialError, TokenCredential, now_ms};
 
 /// `DEFAULT_CYCLER_OPTIONS` (`tokenCycler.js:6-10`).
 const FORCED_REFRESH_WINDOW_MS: u64 = 1000;

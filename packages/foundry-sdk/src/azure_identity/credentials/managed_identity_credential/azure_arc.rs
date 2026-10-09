@@ -4,8 +4,8 @@
 
 use std::path::Path;
 
-use crate::azure_identity::js::JsTruthy;
 use crate::azure_identity::Environment;
+use crate::azure_identity::js::JsTruthy;
 
 /// `:45-47`.
 const DEFAULT_AZURE_ARC_IDENTITY_ENDPOINT: &str =

@@ -147,8 +147,9 @@ mod tests {
 
         let mut decoder = JSONLDecoder::<Item>::from_response(response);
         let err = decoder.next().await.unwrap().unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("Failed to parse readable stream line as JSON"));
+        assert!(
+            err.to_string()
+                .contains("Failed to parse readable stream line as JSON")
+        );
     }
 }

@@ -546,7 +546,7 @@ impl GoogleAuth {
             Some(other) => {
                 return Err(format!(
                     "Unknown `METADATA_SERVER_DETECTION` env variable. Got `{other}`, but it should be `assume-present`, `none`, `bios-only`, `ping-only`, or unset"
-                ))
+                ));
             }
         }
         let response = self
@@ -773,8 +773,8 @@ fn service_account_jwt(
     private_key_id: Option<&str>,
     token_uri: &str,
 ) -> Result<String, String> {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -807,8 +807,8 @@ fn service_account_jwt(
 /// does, so no crypto backend is added: the application's (e.g. ring) is used.
 #[cfg(not(target_os = "android"))]
 fn sign_rs256(private_key_pem: &str, message: &[u8]) -> Result<Vec<u8>, String> {
-    use rustls::pki_types::pem::PemObject;
     use rustls::pki_types::PrivateKeyDer;
+    use rustls::pki_types::pem::PemObject;
 
     let provider = rustls::crypto::CryptoProvider::get_default().ok_or(
         "Signing with a service account key needs a rustls CryptoProvider; install one (for example ring) with `CryptoProvider::install_default()`",

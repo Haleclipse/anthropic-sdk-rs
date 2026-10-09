@@ -1,7 +1,7 @@
 // Ported from TS SDK: tests/helpers/transform-json-schema.test.ts
 
 use anthropic_sdk::sdk_lib::transform_json_schema::{
-    transformJSONSchema, transform_json_schema, JSONSchema,
+    JSONSchema, transform_json_schema, transformJSONSchema,
 };
 use serde_json::json;
 
@@ -279,7 +279,8 @@ fn transform_json_schema_transforms_all_of_recursively() {
 fn transform_json_schema_errors_when_type_missing_without_composition() {
     let err = transform_json_schema(json!({"properties": {"x": {"type": "string"}}}))
         .expect_err("schema without type should fail");
-    assert!(err
-        .to_string()
-        .contains("JSON schema must have a type defined"));
+    assert!(
+        err.to_string()
+            .contains("JSON schema must have a type defined")
+    );
 }

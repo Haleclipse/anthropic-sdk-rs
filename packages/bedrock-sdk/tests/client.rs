@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anthropic_sdk::client::Nullable;
 use anthropic_sdk::resources::beta::messages::{
@@ -15,14 +15,14 @@ use anthropic_sdk::{
 };
 use anthropic_sdk_bedrock::core::streaming::Stream as BedrockCoreStream;
 use anthropic_sdk_bedrock::credential_providers::{
-    from_node_provider_chain, Environment, NodeProviderChainOptions,
+    Environment, NodeProviderChainOptions, from_node_provider_chain,
 };
 use anthropic_sdk_bedrock::{
-    create_client, create_client_with_core_options, get_auth_headers, rewrite_url,
-    AnthropicBedrock, AwsCredentialProvider, AwsCredentials, BedrockConfig,
-    ClientOptions as BedrockClientOptions, ANTHROPIC_VERSION,
+    ANTHROPIC_VERSION, AnthropicBedrock, AwsCredentialProvider, AwsCredentials, BedrockConfig,
+    ClientOptions as BedrockClientOptions, create_client, create_client_with_core_options,
+    get_auth_headers, rewrite_url,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use futures::StreamExt;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -216,8 +216,10 @@ fn get_auth_headers_signs_bedrock_request_with_static_credentials() {
     assert!(authorization.starts_with("AWS4-HMAC-SHA256 "));
     assert!(authorization.contains("Credential=AKIDEXAMPLE/"));
     assert!(authorization.contains("/us-east-1/bedrock/aws4_request"));
-    assert!(authorization
-        .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
+    assert!(
+        authorization
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token")
+    );
     let signature = authorization
         .split("Signature=")
         .nth(1)
@@ -564,13 +566,15 @@ async fn ambient_key_is_sent_next_to_sigv4_and_sigv4_replaces_the_token_like_go(
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests[0].headers.get("x-api-key").unwrap(), "ambient-key");
-    assert!(requests[0]
-        .headers
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .starts_with("AWS4-HMAC-SHA256 "));
+    assert!(
+        requests[0]
+            .headers
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("AWS4-HMAC-SHA256 ")
+    );
 }
 
 /// `validateHeaders() {}`: under `skipAuth` TS sends a request with no auth
@@ -997,12 +1001,14 @@ async fn messages_create_with_static_credentials_adds_sigv4_headers() {
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     let headers = &requests[0].headers;
-    assert!(headers
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .starts_with("AWS4-HMAC-SHA256 "));
+    assert!(
+        headers
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("AWS4-HMAC-SHA256 ")
+    );
     assert!(headers.get("x-amz-date").is_some());
     assert!(headers.get("x-amz-content-sha256").is_some());
     assert_eq!(
@@ -1397,24 +1403,28 @@ async fn messages_create_uses_custom_aws_credential_provider_per_request() {
 
     assert_eq!(counter.load(Ordering::SeqCst), 2);
     let requests = server.received_requests().await.unwrap();
-    assert!(requests[0]
-        .headers
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .contains("Credential=AKIDEXAMPLE1/"));
+    assert!(
+        requests[0]
+            .headers
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("Credential=AKIDEXAMPLE1/")
+    );
     assert_eq!(
         requests[0].headers.get("x-amz-security-token").unwrap(),
         "provider-session-1"
     );
-    assert!(requests[1]
-        .headers
-        .get("authorization")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .contains("Credential=AKIDEXAMPLE2/"));
+    assert!(
+        requests[1]
+            .headers
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("Credential=AKIDEXAMPLE2/")
+    );
     assert_eq!(
         requests[1].headers.get("x-amz-security-token").unwrap(),
         "provider-session-2"
@@ -1751,11 +1761,13 @@ async fn the_clients_own_default_chain_sends_metadata_requests_directly() {
     std::fs::create_dir_all(&dir).unwrap();
     let server = MockServer::start().await;
     // The proxy variable is in force for a client that reads it.
-    assert!(reqwest::Client::new()
-        .get(server.uri())
-        .send()
-        .await
-        .is_err());
+    assert!(
+        reqwest::Client::new()
+            .get(server.uri())
+            .send()
+            .await
+            .is_err()
+    );
     std::fs::write(
         &config,
         format!(

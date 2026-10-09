@@ -10,9 +10,9 @@
 //! equivalent for the provider wrappers.
 
 pub use anthropic_sdk::core::streaming::{
-    _iterSSEMessages, _iter_sse_messages, fromReadableStream, fromSSEResponse,
-    from_readable_stream, from_sse_response, iter_sse_messages, toReadableStream,
-    to_readable_stream, JsonLineStream, RawSseStream, ServerSentEvent, SseStream,
+    _iter_sse_messages, _iterSSEMessages, JsonLineStream, RawSseStream, ServerSentEvent, SseStream,
+    from_readable_stream, from_sse_response, fromReadableStream, fromSSEResponse,
+    iter_sse_messages, to_readable_stream, toReadableStream,
 };
 
 use std::collections::{HashMap, VecDeque};
@@ -20,7 +20,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use anthropic_sdk::core::error::ApiError;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::Bytes;
 use futures::{Stream as FuturesStream, StreamExt};
 use pin_project_lite::pin_project;

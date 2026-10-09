@@ -74,12 +74,16 @@ fn schemars_parse_output_parses_valid_json() {
 #[test]
 fn schemars_parse_output_reports_invalid_json_and_validation_errors() {
     let json_err = schemars_parse_output::<WeatherOutput>("invalid json").unwrap_err();
-    assert!(json_err
-        .to_string()
-        .contains("Failed to parse structured output as JSON"));
+    assert!(
+        json_err
+            .to_string()
+            .contains("Failed to parse structured output as JSON")
+    );
 
     let validation_err = schemars_parse_output::<WeatherOutput>(r#"{"city":"SF"}"#).unwrap_err();
-    assert!(validation_err
-        .to_string()
-        .contains("Failed to parse structured output"));
+    assert!(
+        validation_err
+            .to_string()
+            .contains("Failed to parse structured output")
+    );
 }

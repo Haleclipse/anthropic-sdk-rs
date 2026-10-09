@@ -4,10 +4,10 @@
 
 use std::time::Duration;
 
-use super::{imds_host, map_scopes_to_resource, MsiError};
+use super::{MsiError, imds_host, map_scopes_to_resource};
+use crate::azure_identity::Environment;
 use crate::azure_identity::identity_client::{self, Request, RetryOptions};
 use crate::azure_identity::js::JsTruthy;
-use crate::azure_identity::Environment;
 
 /// `:8`.
 const MSI_NAME: &str = "ManagedIdentityCredential - IMDS";

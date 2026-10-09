@@ -370,9 +370,11 @@ mod tests {
     fn tokenize_dangling_quote_dropped() {
         let tokens = tokenize(r#"{"key": "incom"#);
         // The unterminated string "incom is dropped
-        assert!(tokens
-            .iter()
-            .all(|t| !(t.token_type == TokenType::StringLit && t.value == "incom")));
+        assert!(
+            tokens
+                .iter()
+                .all(|t| !(t.token_type == TokenType::StringLit && t.value == "incom"))
+        );
     }
 
     #[test]

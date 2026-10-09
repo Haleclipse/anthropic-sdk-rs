@@ -3,14 +3,14 @@
 //! MSAL's internal retries (`index.js:79`) and retries in its pipeline.
 
 use super::base_managed_identity_source::{
+    BaseManagedIdentitySource, ManagedIdentityRequestParameters,
     get_managed_identity_user_assigned_id_query_parameter_key,
-    get_validated_env_variable_url_string, BaseManagedIdentitySource,
-    ManagedIdentityRequestParameters,
+    get_validated_env_variable_url_string,
 };
 use super::imds_host;
 use super::managed_identity_application::{ManagedIdentityId, ManagedIdentityIdType};
-use crate::azure_identity::js::JsTruthy;
 use crate::azure_identity::Environment;
+use crate::azure_identity::js::JsTruthy;
 
 /// `:24-26`.
 const IMDS_TOKEN_PATH: &str = "/metadata/identity/oauth2/token";

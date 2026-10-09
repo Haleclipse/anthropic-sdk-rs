@@ -1,8 +1,8 @@
 // Rust schemars equivalent of TS SDK tests/helpers/beta/zod.test.ts behavior.
 
 use anthropic_sdk::helpers::beta::{
-    beta_schemars_output_config, beta_schemars_output_format, beta_schemars_parse_output,
-    beta_schemars_tool, BetaSchemarsToolOptions,
+    BetaSchemarsToolOptions, beta_schemars_output_config, beta_schemars_output_format,
+    beta_schemars_parse_output, beta_schemars_tool,
 };
 use anthropic_sdk::resources::beta::messages::{
     BetaTextBlockParam, BetaToolResultContent, BetaToolResultContentBlockParam,

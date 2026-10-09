@@ -169,7 +169,7 @@ fn context_management_config_serializes_typed_edits() {
             BetaContextManagementEdit::ClearToolUses20250919 {
                 clear_at_least: Some(BetaInputTokensThreshold::input_tokens(1000)),
                 clear_tool_inputs: Some(BetaClearToolInputs::ToolNames(vec![
-                    "get_weather".to_owned()
+                    "get_weather".to_owned(),
                 ])),
                 exclude_tools: None,
                 keep: Some(BetaToolUsesCount::tool_uses(2)),

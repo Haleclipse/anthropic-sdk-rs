@@ -1,7 +1,7 @@
 // Mirrors TS SDK tests/stringifyQuery.test.ts.
 
 use anthropic_sdk::internal::query::{
-    null, reject_unsupported_query_value, stringify_query, undefined, QueryValue,
+    QueryValue, null, reject_unsupported_query_value, stringify_query, undefined,
 };
 
 #[test]
@@ -62,8 +62,9 @@ fn stringify_query_rejects_nested_values_like_ts() {
     for type_name in ["object", "object", "object"] {
         let err = reject_unsupported_query_value(type_name);
         assert!(err.to_string().contains("Cannot stringify type object"));
-        assert!(err
-            .to_string()
-            .contains("Expected string, number, boolean, or null"));
+        assert!(
+            err.to_string()
+                .contains("Expected string, number, boolean, or null")
+        );
     }
 }

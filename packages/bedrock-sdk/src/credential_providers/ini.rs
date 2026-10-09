@@ -6,8 +6,8 @@
 //! resolved yet, and stops the chain rather than letting another source
 //! answer for it.
 
-use super::shared_ini_file_loader::{get_profile_name, parse_known_files, ParsedIniData, Section};
-use super::{process, Credentials, CredentialsProviderError, Init};
+use super::shared_ini_file_loader::{ParsedIniData, Section, get_profile_name, parse_known_files};
+use super::{Credentials, CredentialsProviderError, Init, process};
 
 /// `fromIni(init)()`.
 pub(crate) async fn from_ini(init: &Init) -> Result<Credentials, CredentialsProviderError> {

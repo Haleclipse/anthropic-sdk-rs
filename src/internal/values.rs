@@ -419,14 +419,18 @@ mod tests {
     fn integer_validation_and_coercion_match_ts_helpers() {
         assert_eq!(validate_positive_integer("n", &json!(0)).unwrap(), 0.0);
         assert_eq!(validate_positive_integer("n", &json!(42)).unwrap(), 42.0);
-        assert!(validate_positive_integer("n", &json!(1.2))
-            .unwrap_err()
-            .to_string()
-            .contains("n must be an integer"));
-        assert!(validate_positive_integer("n", &json!(-1))
-            .unwrap_err()
-            .to_string()
-            .contains("n must be a positive integer"));
+        assert!(
+            validate_positive_integer("n", &json!(1.2))
+                .unwrap_err()
+                .to_string()
+                .contains("n must be an integer")
+        );
+        assert!(
+            validate_positive_integer("n", &json!(-1))
+                .unwrap_err()
+                .to_string()
+                .contains("n must be a positive integer")
+        );
 
         assert_eq!(coerce_integer(&json!(1.49)).unwrap(), 1.0);
         assert_eq!(coerce_integer(&json!(1.5)).unwrap(), 2.0);
@@ -434,10 +438,12 @@ mod tests {
         assert_eq!(coerce_integer(&json!("42px")).unwrap(), 42.0);
         assert_eq!(coerce_integer(&json!("0x10")).unwrap(), 0.0);
         assert!(coerce_integer(&json!("x")).unwrap().is_nan());
-        assert!(coerce_integer(&json!({"x": 1}))
-            .unwrap_err()
-            .to_string()
-            .contains("Could not coerce [object Object] (type: object) into a number"));
+        assert!(
+            coerce_integer(&json!({"x": 1}))
+                .unwrap_err()
+                .to_string()
+                .contains("Could not coerce [object Object] (type: object) into a number")
+        );
     }
 
     #[test]
@@ -446,10 +452,12 @@ mod tests {
         assert_eq!(coerce_float(&json!("1e2")).unwrap(), 100.0);
         assert_eq!(coerce_float(&json!("1e+")).unwrap(), 1.0);
         assert!(coerce_float(&json!("nope")).unwrap().is_nan());
-        assert!(coerce_float(&json!([1]))
-            .unwrap_err()
-            .to_string()
-            .contains("Could not coerce 1 (type: object) into a number"));
+        assert!(
+            coerce_float(&json!([1]))
+                .unwrap_err()
+                .to_string()
+                .contains("Could not coerce 1 (type: object) into a number")
+        );
 
         assert!(coerce_boolean(&json!(true)));
         assert!(coerce_boolean(&json!("true")));

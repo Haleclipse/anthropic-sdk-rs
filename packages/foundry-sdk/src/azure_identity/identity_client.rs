@@ -15,8 +15,8 @@
 
 use std::time::Duration;
 
-use crate::azure_identity::constants::DEFAULT_AUTHORITY_HOST;
 use crate::azure_identity::Environment;
+use crate::azure_identity::constants::DEFAULT_AUTHORITY_HOST;
 
 /// `identityClient.js:47`.
 pub(crate) const INSECURE_AUTHORITY_HOST: &str =

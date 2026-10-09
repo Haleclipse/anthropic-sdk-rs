@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::js::{is_js_whitespace, js_trim};
 use super::Environment;
+use super::js::{is_js_whitespace, js_trim};
 
 pub(crate) const ENV_PROFILE: &str = "AWS_PROFILE";
 const DEFAULT_PROFILE: &str = "default";

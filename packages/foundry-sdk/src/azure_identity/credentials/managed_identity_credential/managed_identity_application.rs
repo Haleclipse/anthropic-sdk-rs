@@ -15,12 +15,12 @@ use std::sync::Mutex;
 use super::base_managed_identity_source::ManagedIdentityRequest;
 use super::managed_identity_client::{self, ManagedIdentitySourceNames};
 use super::{IdentityClient, MsiError};
+use crate::azure_identity::Environment;
 use crate::azure_identity::msal::access_token_entity::AccessTokenEntity;
 use crate::azure_identity::msal::authentication_result::AuthenticationResult;
 use crate::azure_identity::msal::cache_manager;
 use crate::azure_identity::msal::client_credential_client::get_cached_authentication_result;
 use crate::azure_identity::msal::constants::CacheOutcome;
-use crate::azure_identity::Environment;
 
 /// Maps to: `src/utils/Constants.ts` `DEFAULT_MANAGED_IDENTITY_ID`.
 const DEFAULT_MANAGED_IDENTITY_ID: &str = "system_assigned_managed_identity";

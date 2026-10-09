@@ -1,9 +1,9 @@
 // Ported from TS SDK: tests/helpers/beta/json-schema.test.ts
 
 use anthropic_sdk::helpers::beta::json_schema::{
-    betaJSONSchemaOutputFormat, betaJSONSchemaOutputFormatWithOptions, betaTool,
-    beta_json_schema_format, beta_json_schema_format_with_options, beta_json_schema_output_format,
-    beta_json_schema_tool, BetaJsonSchemaToolOptions,
+    BetaJsonSchemaToolOptions, beta_json_schema_format, beta_json_schema_format_with_options,
+    beta_json_schema_output_format, beta_json_schema_tool, betaJSONSchemaOutputFormat,
+    betaJSONSchemaOutputFormatWithOptions, betaTool,
 };
 use anthropic_sdk::helpers::json_schema::JsonSchemaOutputFormatOptions;
 use anthropic_sdk::resources::beta::messages::{
@@ -139,7 +139,8 @@ fn beta_json_schema_tool_rejects_non_object_schema_like_ts() {
         Err(err) => err,
     };
 
-    assert!(err
-        .to_string()
-        .contains("JSON schema for tool \"bad\" must be an object, but got string"));
+    assert!(
+        err.to_string()
+            .contains("JSON schema for tool \"bad\" must be an object, but got string")
+    );
 }

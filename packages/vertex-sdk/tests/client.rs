@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anthropic_sdk::client::Nullable;
 use anthropic_sdk::resources::beta::messages::{
@@ -11,8 +11,8 @@ use anthropic_sdk::{
     MessageCreateParams, MessageParam, RequestOptions,
 };
 use anthropic_sdk_vertex::{
-    create_client, create_client_with_core_options, rewrite_url, AnthropicVertex,
-    ClientOptions as VertexClientOptions, TokenProvider, VertexConfig, ANTHROPIC_VERSION,
+    ANTHROPIC_VERSION, AnthropicVertex, ClientOptions as VertexClientOptions, TokenProvider,
+    VertexConfig, create_client, create_client_with_core_options, rewrite_url,
 };
 use serde_json::Value;
 use wiremock::matchers::{method, path, query_param};
@@ -350,7 +350,10 @@ async fn messages_create_applies_request_options_body_before_vertex_rewrite_like
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(requests[0].url.path(), "/projects/my-project/locations/us-east5/publishers/anthropic/models/override-model:rawPredict");
+    assert_eq!(
+        requests[0].url.path(),
+        "/projects/my-project/locations/us-east5/publishers/anthropic/models/override-model:rawPredict"
+    );
     assert!(body.get("model").is_none());
     assert_eq!(body["stream"], false);
     assert_eq!(body["max_tokens"], 7);

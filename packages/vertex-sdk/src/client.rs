@@ -10,6 +10,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use anthropic_sdk::RequestOptions;
 use anthropic_sdk::client::{
     Anthropic, ClientOptions as CoreClientOptions, Nullable, RequestHeadersProvider,
 };
@@ -29,16 +30,15 @@ use anthropic_sdk::resources::messages::{
 };
 use anthropic_sdk::sdk_lib::beta_message_stream::BetaMessageStream;
 use anthropic_sdk::sdk_lib::beta_parser::{
-    parse_beta_message, parsed_beta_message_without_parsing, ParsedBetaMessage,
+    ParsedBetaMessage, parse_beta_message, parsed_beta_message_without_parsing,
 };
 use anthropic_sdk::sdk_lib::message_stream::MessageStream;
 use anthropic_sdk::sdk_lib::parser::{
-    parse_message, parsed_message_without_parsing, ParsedMessage,
+    ParsedMessage, parse_message, parsed_message_without_parsing,
 };
 use anthropic_sdk::sdk_lib::tools::{
     BetaMessageCreateClient, BetaToolRunner, BetaToolRunnerParams,
 };
-use anthropic_sdk::RequestOptions;
 
 pub use anthropic_sdk::BaseAnthropic;
 

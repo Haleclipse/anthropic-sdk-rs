@@ -1,8 +1,8 @@
 // Ported from TS SDK: tests/helpers/json-schema.test.ts
 
 use anthropic_sdk::helpers::json_schema::{
-    jsonSchemaOutputFormat, jsonSchemaOutputFormatWithOptions, json_schema_format,
-    json_schema_format_with_options, JsonSchemaOutputFormatOptions,
+    JsonSchemaOutputFormatOptions, json_schema_format, json_schema_format_with_options,
+    jsonSchemaOutputFormat, jsonSchemaOutputFormatWithOptions,
 };
 use anthropic_sdk::sdk_lib::parser::parse_message;
 use anthropic_sdk::{ContentBlock, Message, StopReason, Usage};
@@ -59,9 +59,10 @@ fn json_schema_format_allows_disabling_transform() {
 #[test]
 fn json_schema_format_rejects_non_object_schema() {
     let err = json_schema_format(json!({"type": "string"})).expect_err("should reject string");
-    assert!(err
-        .to_string()
-        .contains("JSON schema must be an object, but got string"));
+    assert!(
+        err.to_string()
+            .contains("JSON schema must be an object, but got string")
+    );
 }
 
 #[test]

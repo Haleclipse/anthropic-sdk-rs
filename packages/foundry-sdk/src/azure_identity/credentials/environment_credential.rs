@@ -15,7 +15,7 @@ use std::future::Future;
 use futures::future::BoxFuture;
 
 use super::client_secret_credential::{
-    check_tenant_id, generate_msal_configuration, identity_client_post, ClientSecretCredential,
+    ClientSecretCredential, check_tenant_id, generate_msal_configuration, identity_client_post,
 };
 use crate::azure_identity::errors::AuthenticationErrorBody;
 use crate::azure_identity::identity_client::{Request, Response, SendError};
@@ -233,7 +233,9 @@ mod tests {
         assert_eq!(build(&certificate_http).err().as_deref(), insecure);
 
         assert_eq!(
-            build(&[("AZURE_TENANT_ID", "not/a/tenant")]).err().as_deref(),
+            build(&[("AZURE_TENANT_ID", "not/a/tenant")])
+                .err()
+                .as_deref(),
             Some(
                 "Invalid tenant id provided. You can locate your tenant id by following the instructions listed here: https://learn.microsoft.com/partner-center/find-ids-and-domain-names."
             )

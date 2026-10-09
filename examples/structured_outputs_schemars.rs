@@ -4,8 +4,8 @@
 // Rust equivalent uses schemars for JSON Schema and serde for validation.
 
 use anthropic_sdk::{
-    helpers::schemars::schemars_output_config, Anthropic, ClientOptions, ContentBlock,
-    MessageContent, MessageCreateParams, MessageParam,
+    Anthropic, ClientOptions, ContentBlock, MessageContent, MessageCreateParams, MessageParam,
+    helpers::schemars::schemars_output_config,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;

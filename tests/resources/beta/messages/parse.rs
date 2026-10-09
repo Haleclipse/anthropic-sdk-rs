@@ -202,9 +202,10 @@ async fn beta_messages_parse_returns_validation_errors() {
         .parse::<Weather>(&beta_parse_params())
         .await
         .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Failed to parse structured output"));
+    assert!(
+        err.to_string()
+            .contains("Failed to parse structured output")
+    );
 }
 
 #[tokio::test]

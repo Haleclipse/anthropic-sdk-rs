@@ -4,7 +4,7 @@
 // Rust SDK surfaces do not look unfinished.
 
 use anthropic_sdk::helpers::beta::memory::{
-    betaMemoryTool, beta_memory_tool, BetaMemoryToolHandlers, MemoryToolHandlers,
+    BetaMemoryToolHandlers, MemoryToolHandlers, beta_memory_tool, betaMemoryTool,
 };
 use anthropic_sdk::resources::beta::messages::types::{
     BetaMemoryTool20250818Command, BetaMemoryTool20250818CreateCommand,

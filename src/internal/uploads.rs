@@ -8,8 +8,8 @@
 //! `multipartFormRequestOptions()`.
 
 pub use crate::core::uploads::{
-    create_form, flatten_form_fields, form_from_fields, form_null, form_undefined, FormField,
-    FormValue, ToFileInput, Uploadable,
+    FormField, FormValue, ToFileInput, Uploadable, create_form, flatten_form_fields,
+    form_from_fields, form_null, form_undefined,
 };
 
 /// Rust equivalent of TS `checkFileSupport()`.

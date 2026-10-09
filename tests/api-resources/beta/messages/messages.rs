@@ -7,7 +7,7 @@ use anthropic_sdk::helpers::beta::json_schema::{
     beta_json_schema_format, beta_json_schema_output_format,
 };
 use anthropic_sdk::helpers::beta::mcp::{
-    mcp_message, mcp_tool_definition, MCPPromptMessageLike, MCPToolLike, MCPToolResultContentLike,
+    MCPPromptMessageLike, MCPToolLike, MCPToolResultContentLike, mcp_message, mcp_tool_definition,
 };
 use anthropic_sdk::resources::beta::messages::{
     BetaMessageContent, BetaMessageCountTokensParams, BetaMessageCreateParams, BetaMessageParam,
@@ -255,9 +255,11 @@ async fn beta_messages_create_sends_helper_header_for_mcp_message_content() {
 
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["messages"][0]["content"][0]["text"], "hello from MCP");
-    assert!(body["messages"][0]["content"][0]
-        .get("stainless_helpers")
-        .is_none());
+    assert!(
+        body["messages"][0]["content"][0]
+            .get("stainless_helpers")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -272,9 +274,10 @@ async fn beta_messages_create_rejects_nonstreaming_requests_that_need_streaming_
     };
 
     let err = client.beta().messages().create(&params).await.unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests"));
+    assert!(
+        err.to_string()
+            .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests")
+    );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -479,8 +482,9 @@ async fn beta_messages_create_rejects_output_format_and_output_config_format() {
     };
 
     let err = client.beta().messages().create(&params).await.unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Both output_format and output_config.format were provided"));
+    assert!(
+        err.to_string()
+            .contains("Both output_format and output_config.format were provided")
+    );
     assert!(server.received_requests().await.unwrap().is_empty());
 }

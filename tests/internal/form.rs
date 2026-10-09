@@ -1,7 +1,7 @@
 // Mirrors TS SDK tests/form.test.ts for multipart form flattening.
 
 use anthropic_sdk::core::uploads::{
-    flatten_form_fields, form_null, form_undefined, FormField, FormValue, Uploadable,
+    FormField, FormValue, Uploadable, flatten_form_fields, form_null, form_undefined,
 };
 
 fn text_entries(fields: &[FormField]) -> Vec<(&str, &str)> {
@@ -37,9 +37,10 @@ fn multipart_form_accepts_valid_primitives_and_files() {
 #[test]
 fn multipart_form_rejects_null_like_ts() {
     let err = flatten_form_fields(vec![("null", form_null())]).unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Received null for \"null\"; to pass null in FormData"));
+    assert!(
+        err.to_string()
+            .contains("Received null for \"null\"; to pass null in FormData")
+    );
 }
 
 #[test]

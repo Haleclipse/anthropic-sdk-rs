@@ -8,7 +8,7 @@
 //! here are small adapters that preserve the TS internal names while using
 //! idiomatic Rust types.
 
-use futures::{stream, Stream};
+use futures::{Stream, stream};
 
 /// Rust equivalent of TS `getDefaultFetch()`.
 ///

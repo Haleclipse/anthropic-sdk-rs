@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use crate::azure_identity::identity_client::{
-    self, calculate_retry_delay, Request, Response, RetryOptions, SendError,
+    self, Request, Response, RetryOptions, SendError, calculate_retry_delay,
 };
 
 /// `:6`, the exponential strategy's cap.

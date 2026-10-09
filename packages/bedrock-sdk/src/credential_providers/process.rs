@@ -10,7 +10,7 @@ use std::process::Stdio;
 use serde_json::Value;
 
 use super::js::{date_from_value, js_trim};
-use super::shared_ini_file_loader::{get_profile_name, parse_known_files, ParsedIniData};
+use super::shared_ini_file_loader::{ParsedIniData, get_profile_name, parse_known_files};
 use super::{Credentials, CredentialsProviderError, Environment, Init};
 
 /// `fromProcess(init)()`.

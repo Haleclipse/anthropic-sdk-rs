@@ -72,11 +72,7 @@ fn parse_iso_date(text: &str) -> Option<f64> {
             if sign == b'-' && year == 0 {
                 return None;
             }
-            if sign == b'-' {
-                -year
-            } else {
-                year
-            }
+            if sign == b'-' { -year } else { year }
         }
         _ => scanner.digits(4, 4)?,
     };

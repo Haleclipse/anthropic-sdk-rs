@@ -209,9 +209,11 @@ async fn models_request_options_path_override_applies_to_retrieve_and_list() {
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 2);
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap() == "beta-flag"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap() == "beta-flag")
+    );
 
     let list_request = requests
         .iter()

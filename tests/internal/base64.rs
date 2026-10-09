@@ -42,16 +42,22 @@ fn from_base64_matches_ts_utility_cases() {
 
 #[test]
 fn from_base64_reports_invalid_input() {
-    assert!(from_base64("a")
-        .unwrap_err()
-        .to_string()
-        .contains("invalid base64"));
-    assert!(from_base64("!!!!")
-        .unwrap_err()
-        .to_string()
-        .contains("invalid base64"));
-    assert!(from_base64("abc=d")
-        .unwrap_err()
-        .to_string()
-        .contains("invalid base64"));
+    assert!(
+        from_base64("a")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid base64")
+    );
+    assert!(
+        from_base64("!!!!")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid base64")
+    );
+    assert!(
+        from_base64("abc=d")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid base64")
+    );
 }

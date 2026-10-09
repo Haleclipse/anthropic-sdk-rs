@@ -10,14 +10,14 @@ use crate::core::response::{ApiResponse, RawResponse};
 use crate::core::streaming::SseStream;
 use crate::internal::request_options::RequestOptions;
 use crate::resources::messages::{
-    emit_message_create_warnings, CacheControlEphemeral, CacheCreation, CitationsConfigParam,
-    JsonOutputFormat, Metadata, OutputConfig, SystemPrompt, TextBlock, TextCitation,
-    TextCitationParam, ThinkingConfig, ToolChoice, ToolUnion, WebSearchToolResultBlockContent,
-    WebSearchToolResultBlockParamContent,
+    CacheControlEphemeral, CacheCreation, CitationsConfigParam, JsonOutputFormat, Metadata,
+    OutputConfig, SystemPrompt, TextBlock, TextCitation, TextCitationParam, ThinkingConfig,
+    ToolChoice, ToolUnion, WebSearchToolResultBlockContent, WebSearchToolResultBlockParamContent,
+    emit_message_create_warnings,
 };
 use crate::sdk_lib::beta_message_stream::BetaMessageStream;
 use crate::sdk_lib::beta_parser::{
-    parse_beta_message, parsed_beta_message_without_parsing, ParsedBetaMessage,
+    ParsedBetaMessage, parse_beta_message, parsed_beta_message_without_parsing,
 };
 use crate::sdk_lib::tools::{BetaToolRunner, BetaToolRunnerParams};
 

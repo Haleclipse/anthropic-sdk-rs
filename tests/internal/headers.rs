@@ -1,7 +1,7 @@
 // Mirrors TS SDK tests/buildHeaders.test.ts for ordered/nullable headers.
 
 use anthropic_sdk::internal::headers::{
-    build_nullable_headers, is_empty_header_layer, HeaderLayer, HeaderValueInput,
+    HeaderLayer, HeaderValueInput, build_nullable_headers, is_empty_header_layer,
 };
 
 fn header_value(

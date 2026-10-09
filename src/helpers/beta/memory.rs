@@ -37,9 +37,9 @@ impl BetaMemoryToolHandlers {
     pub fn with_view(
         self,
         handler: impl Fn(BetaMemoryTool20250818ViewCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_view_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
@@ -47,9 +47,9 @@ impl BetaMemoryToolHandlers {
     pub fn with_view_content(
         mut self,
         handler: impl Fn(BetaMemoryTool20250818ViewCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.view = Some(Arc::new(handler));
         self
@@ -58,19 +58,21 @@ impl BetaMemoryToolHandlers {
     pub fn with_create(
         self,
         handler: impl Fn(BetaMemoryTool20250818CreateCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_create_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
 
     pub fn with_create_content(
         mut self,
-        handler: impl Fn(BetaMemoryTool20250818CreateCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        handler: impl Fn(
+            BetaMemoryTool20250818CreateCommand,
+        ) -> Result<BetaToolResultContent, ToolError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.create = Some(Arc::new(handler));
         self
@@ -79,19 +81,21 @@ impl BetaMemoryToolHandlers {
     pub fn with_str_replace(
         self,
         handler: impl Fn(BetaMemoryTool20250818StrReplaceCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_str_replace_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
 
     pub fn with_str_replace_content(
         mut self,
-        handler: impl Fn(BetaMemoryTool20250818StrReplaceCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        handler: impl Fn(
+            BetaMemoryTool20250818StrReplaceCommand,
+        ) -> Result<BetaToolResultContent, ToolError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.str_replace = Some(Arc::new(handler));
         self
@@ -100,19 +104,21 @@ impl BetaMemoryToolHandlers {
     pub fn with_insert(
         self,
         handler: impl Fn(BetaMemoryTool20250818InsertCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_insert_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
 
     pub fn with_insert_content(
         mut self,
-        handler: impl Fn(BetaMemoryTool20250818InsertCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        handler: impl Fn(
+            BetaMemoryTool20250818InsertCommand,
+        ) -> Result<BetaToolResultContent, ToolError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.insert = Some(Arc::new(handler));
         self
@@ -121,19 +127,21 @@ impl BetaMemoryToolHandlers {
     pub fn with_delete(
         self,
         handler: impl Fn(BetaMemoryTool20250818DeleteCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_delete_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
 
     pub fn with_delete_content(
         mut self,
-        handler: impl Fn(BetaMemoryTool20250818DeleteCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        handler: impl Fn(
+            BetaMemoryTool20250818DeleteCommand,
+        ) -> Result<BetaToolResultContent, ToolError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.delete = Some(Arc::new(handler));
         self
@@ -142,19 +150,21 @@ impl BetaMemoryToolHandlers {
     pub fn with_rename(
         self,
         handler: impl Fn(BetaMemoryTool20250818RenameCommand) -> Result<String, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.with_rename_content(move |cmd| handler(cmd).map(BetaToolResultContent::Text))
     }
 
     pub fn with_rename_content(
         mut self,
-        handler: impl Fn(BetaMemoryTool20250818RenameCommand) -> Result<BetaToolResultContent, ToolError>
-            + Send
-            + Sync
-            + 'static,
+        handler: impl Fn(
+            BetaMemoryTool20250818RenameCommand,
+        ) -> Result<BetaToolResultContent, ToolError>
+        + Send
+        + Sync
+        + 'static,
     ) -> Self {
         self.rename = Some(Arc::new(handler));
         self

@@ -1,3 +1,2 @@
-# The crates moved to edition 2024; formatting stays on the 2021 style until
-# the style change is made on its own.
-style_edition = "2021"
+# The edition 2024 style; everything else is rustfmt's default.
+style_edition = "2024"

@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anthropic_sdk::resources::beta::messages::{
     BetaMessageContent, BetaMessageCountTokensParams, BetaMessageCreateParams, BetaMessageParam,
@@ -10,8 +10,8 @@ use anthropic_sdk::{
     MessageCreateParams, MessageParam,
 };
 use anthropic_sdk_foundry::{
-    base_url, create_client, create_client_with_core_options, AnthropicFoundry,
-    FoundryClientOptions, FoundryConfig, TokenProvider, TokenProviderError,
+    AnthropicFoundry, FoundryClientOptions, FoundryConfig, TokenProvider, TokenProviderError,
+    base_url, create_client, create_client_with_core_options,
 };
 use serde_json::Value;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};

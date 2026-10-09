@@ -37,7 +37,7 @@ pub use credentials::default_azure_credential::{
     DefaultAzureCredential, DefaultAzureCredentialOptions,
 };
 pub use errors::CredentialError;
-pub use token_provider::{get_bearer_token_provider, BearerTokenProvider};
+pub use token_provider::{BearerTokenProvider, get_bearer_token_provider};
 
 use std::ffi::{OsStr, OsString};
 use std::sync::Arc;

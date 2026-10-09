@@ -38,14 +38,14 @@ use serde_json::{Map, Value};
 
 use crate::azure_identity::constants::DEFAULT_AUTHORITY_HOST;
 use crate::azure_identity::identity_client::{self, Request, Response, RetryOptions, SendError};
-use crate::azure_identity::js::{js_string, JsTruthy};
+use crate::azure_identity::js::{JsTruthy, js_string};
 use crate::azure_identity::msal::access_token_entity::AccessTokenEntity;
 use crate::azure_identity::msal::auth_error::{MsalError, MsalErrorKind};
 use crate::azure_identity::msal::authentication_result::AuthenticationResult;
 use crate::azure_identity::msal::cache_manager;
 use crate::azure_identity::msal::client_credential_client::get_cached_authentication_result;
 use crate::azure_identity::msal::constants::{
-    CacheOutcome, AAD_AUTHORITIES, KNOWN_PUBLIC_CLOUDS, OIDC_DEFAULT_SCOPES,
+    AAD_AUTHORITIES, CacheOutcome, KNOWN_PUBLIC_CLOUDS, OIDC_DEFAULT_SCOPES,
     REGIONAL_AUTH_PUBLIC_CLOUD_SUFFIX, URL_FORM_CONTENT_TYPE,
 };
 use crate::azure_identity::msal::network_response::NetworkResponse;
@@ -60,7 +60,7 @@ use crate::azure_identity::msal::url_string::{
 };
 use crate::azure_identity::msal::url_utils::map_to_query_string;
 use crate::azure_identity::{
-    now_ms, timestamp, AccessToken, CredentialError, Environment, TokenCredential,
+    AccessToken, CredentialError, Environment, TokenCredential, now_ms, timestamp,
 };
 
 /// `util/tenantIdUtils.js:11`.

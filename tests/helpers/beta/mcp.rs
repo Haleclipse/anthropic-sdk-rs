@@ -4,13 +4,13 @@ use std::sync::{Arc, Mutex};
 
 use anthropic_sdk::core::uploads::Uploadable;
 use anthropic_sdk::helpers::beta::mcp::{
-    mcpContent, mcpContentWithOptions, mcpMessage, mcpMessages, mcpResourceToContent,
-    mcpResourceToContentWithOptions, mcpResourceToFile, mcpTool, mcpTools, mcp_content,
-    mcp_message, mcp_resource_to_content, mcp_resource_to_file, mcp_tool, mcp_tool_definition,
     MCPBlobResourceContentsLike, MCPCallToolParams, MCPCallToolResultLike, MCPClientLike,
     MCPContentExtraProps, MCPEmbeddedResourceLike, MCPPromptMessageLike, MCPReadResourceResultLike,
     MCPResourceContentsLike, MCPTextContentLike, MCPTextResourceContentsLike, MCPToolExtraProps,
-    MCPToolLike, MCPToolResultContentLike, SDK_HELPER_SYMBOL,
+    MCPToolLike, MCPToolResultContentLike, SDK_HELPER_SYMBOL, mcp_content, mcp_message,
+    mcp_resource_to_content, mcp_resource_to_file, mcp_tool, mcp_tool_definition, mcpContent,
+    mcpContentWithOptions, mcpMessage, mcpMessages, mcpResourceToContent,
+    mcpResourceToContentWithOptions, mcpResourceToFile, mcpTool, mcpTools,
 };
 use anthropic_sdk::resources::beta::messages::types::{
     BetaContentBlockParam, BetaMessageContent, BetaRequestDocumentSource, BetaToolAllowedCaller,
@@ -139,18 +139,22 @@ fn mcp_content_rejects_unsupported_audio_and_image_mime() {
         mime_type: "audio/wav".to_owned(),
     })
     .unwrap_err();
-    assert!(audio_err
-        .to_string()
-        .contains("Unsupported MCP content type: audio"));
+    assert!(
+        audio_err
+            .to_string()
+            .contains("Unsupported MCP content type: audio")
+    );
 
     let image_err = mcp_content(MCPToolResultContentLike::Image {
         data: "abc".to_owned(),
         mime_type: "image/tiff".to_owned(),
     })
     .unwrap_err();
-    assert!(image_err
-        .to_string()
-        .contains("Unsupported image MIME type: image/tiff"));
+    assert!(
+        image_err
+            .to_string()
+            .contains("Unsupported image MIME type: image/tiff")
+    );
 
     let unsupported_resource_err = mcp_content(MCPToolResultContentLike::Resource {
         resource: MCPResourceContentsLike::Text(MCPTextResourceContentsLike {
@@ -160,9 +164,11 @@ fn mcp_content_rejects_unsupported_audio_and_image_mime() {
         }),
     })
     .unwrap_err();
-    assert!(unsupported_resource_err
-        .to_string()
-        .contains("Unsupported MIME type \"audio/wav\" for resource: file:///docs/sound.wav"));
+    assert!(
+        unsupported_resource_err
+            .to_string()
+            .contains("Unsupported MIME type \"audio/wav\" for resource: file:///docs/sound.wav")
+    );
 }
 
 #[test]
@@ -219,9 +225,10 @@ fn mcp_resource_to_content_converts_pdf_blob_and_text() {
         })],
     })
     .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("No supported MIME type found in resource contents. Available: audio/wav"));
+    assert!(
+        err.to_string()
+            .contains("No supported MIME type found in resource contents. Available: audio/wav")
+    );
 }
 
 #[test]
@@ -345,10 +352,12 @@ async fn mcp_ts_style_aliases_are_available_like_helpers_beta_mcp_exports() {
 
     let client = Arc::new(FakeMcpClient {
         result: MCPCallToolResultLike {
-            content: vec![MCPTextContentLike {
-                text: "ok".to_owned(),
-            }
-            .into()],
+            content: vec![
+                MCPTextContentLike {
+                    text: "ok".to_owned(),
+                }
+                .into(),
+            ],
             structured_content: None,
             is_error: None,
         },

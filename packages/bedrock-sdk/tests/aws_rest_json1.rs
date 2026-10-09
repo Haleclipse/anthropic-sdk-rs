@@ -1,7 +1,7 @@
-use anthropic_sdk_bedrock::AWS_restJson1::{de_ResponseStream, ResponseStream};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use anthropic_sdk_bedrock::AWS_restJson1::{ResponseStream, de_ResponseStream};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::Bytes;
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 
 #[tokio::test]
 async fn de_response_stream_decodes_chunk_payload_part_like_ts_aws_rest_json1() {

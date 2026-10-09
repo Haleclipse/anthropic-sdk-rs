@@ -247,10 +247,12 @@ async fn beta_message_batches_retrieve_list_cancel_and_delete_use_beta_paths() {
     assert_eq!(deleted.id, "batch_123");
 
     let requests = server.received_requests().await.unwrap();
-    assert!(requests
-        .iter()
-        .all(|request| request.headers.get("anthropic-beta").unwrap()
-            == "custom-beta,message-batches-2024-09-24"));
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.headers.get("anthropic-beta").unwrap()
+                == "custom-beta,message-batches-2024-09-24")
+    );
     let list_request = requests
         .iter()
         .find(|request| request.url.path() == "/v1/messages/batches" && request.method == "GET")
@@ -395,10 +397,12 @@ async fn beta_message_batches_with_response_helpers_return_data_raw_response_and
     assert_eq!(deleted.request_id.as_deref(), Some("req_beta_batch_delete"));
 
     let requests = server.received_requests().await.unwrap();
-    assert!(requests.iter().all(|request| request
-        .url
-        .query_pairs()
-        .any(|(k, v)| k == "beta" && v == "true")));
+    assert!(requests.iter().all(|request| {
+        request
+            .url
+            .query_pairs()
+            .any(|(k, v)| k == "beta" && v == "true")
+    }));
 }
 
 #[tokio::test]

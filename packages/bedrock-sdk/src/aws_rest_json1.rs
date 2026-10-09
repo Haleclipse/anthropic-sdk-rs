@@ -15,7 +15,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use anthropic_sdk::core::error::ApiError;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use pin_project_lite::pin_project;

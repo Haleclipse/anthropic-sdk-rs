@@ -294,9 +294,10 @@ async fn messages_create_rejects_nonstreaming_requests_that_need_streaming_timeo
     };
 
     let err = client.messages().create(&params).await.unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests"));
+    assert!(
+        err.to_string()
+            .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests")
+    );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -377,9 +378,10 @@ async fn messages_create_request_timeout_does_not_bypass_streaming_requirement_l
         .create_with_options(&params, Some(&options))
         .await
         .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests"));
+    assert!(
+        err.to_string()
+            .contains("https://github.com/anthropics/anthropic-sdk-typescript#long-requests")
+    );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -493,16 +495,18 @@ async fn messages_create_sends_helper_header_for_marked_tool() {
             role: "user".to_owned(),
         }],
         model: "claude-opus-4-6".to_owned(),
-        tools: Some(vec![ToolUnion::Custom(Tool {
-            input_schema: serde_json::json!({"type": "object"}),
-            name: "helper_tool".to_owned(),
-            cache_control: None,
-            description: Some("Helper-created tool".to_owned()),
-            eager_input_streaming: None,
-            strict: None,
-            type_name: Some("custom".to_owned()),
-        })
-        .with_stainless_helper("schemarsTool")]),
+        tools: Some(vec![
+            ToolUnion::Custom(Tool {
+                input_schema: serde_json::json!({"type": "object"}),
+                name: "helper_tool".to_owned(),
+                cache_control: None,
+                description: Some("Helper-created tool".to_owned()),
+                eager_input_streaming: None,
+                strict: None,
+                type_name: Some("custom".to_owned()),
+            })
+            .with_stainless_helper("schemarsTool"),
+        ]),
         ..Default::default()
     };
 

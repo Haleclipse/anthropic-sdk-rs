@@ -2,8 +2,8 @@
 //! `src/client/ManagedIdentitySources/MachineLearning.ts`, detection only: the
 //! token request is not ported (see the module root).
 
-use crate::azure_identity::js::JsTruthy;
 use crate::azure_identity::Environment;
+use crate::azure_identity::js::JsTruthy;
 
 /// Maps to: `:81-89` `getEnvironmentVariables`.
 pub(super) fn get_environment_variables(env: &Environment) -> [Option<String>; 2] {

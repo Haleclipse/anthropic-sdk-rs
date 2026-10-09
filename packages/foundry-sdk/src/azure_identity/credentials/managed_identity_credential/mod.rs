@@ -38,7 +38,7 @@ use crate::azure_identity::identity_client::{self, Request, RetryOptions, SendEr
 use crate::azure_identity::msal::auth_error::{MsalError, MsalErrorKind};
 use crate::azure_identity::msal::network_response::NetworkResponse;
 use crate::azure_identity::{
-    timestamp, AccessToken, CredentialError, Environment, TokenCredential,
+    AccessToken, CredentialError, Environment, TokenCredential, timestamp,
 };
 
 /// What `createDefaultManagedIdentityCredential` constructs with.

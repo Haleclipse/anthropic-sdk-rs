@@ -3,12 +3,12 @@
 //! probed: the credential probes IMDS only.
 
 use super::base_managed_identity_source::{
-    get_managed_identity_user_assigned_id_query_parameter_key, BaseManagedIdentitySource,
-    ManagedIdentityRequestParameters,
+    BaseManagedIdentitySource, ManagedIdentityRequestParameters,
+    get_managed_identity_user_assigned_id_query_parameter_key,
 };
 use super::managed_identity_application::{ManagedIdentityId, ManagedIdentityIdType};
-use crate::azure_identity::js::JsTruthy;
 use crate::azure_identity::Environment;
+use crate::azure_identity::js::JsTruthy;
 
 /// `:22`.
 const APP_SERVICE_MSI_API_VERSION: &str = "2019-08-01";
