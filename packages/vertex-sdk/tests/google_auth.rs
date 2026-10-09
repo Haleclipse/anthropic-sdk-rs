@@ -9,8 +9,10 @@ use std::sync::Arc;
 use anthropic_sdk::{
     ClientOptions as CoreClientOptions, MessageContent, MessageCreateParams, MessageParam,
 };
-use anthropic_sdk_vertex::google_auth::NO_ADC_FOUND;
-use anthropic_sdk_vertex::{AnthropicVertex, TokenProvider, VertexConfig};
+use anthropic_sdk_vertex::google_auth::{Environment, NO_ADC_FOUND};
+use anthropic_sdk_vertex::{
+    AnthropicVertex, GoogleAuth, GoogleAuthOptions, TokenProvider, VertexConfig,
+};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use serde_json::Value;
@@ -456,4 +458,163 @@ async fn gcp_auth_headers_win_over_default_headers_like_ts_prepare_options() {
         model.headers.get("authorization").unwrap(),
         "Bearer gcp-token"
     );
+}
+
+// ── Injected environment and client ─────────────────────────────────────────
+// These run in the test process: `GoogleAuth::new` reads only what it is
+// given, so no test needs a child environment.
+
+/// A client that stamps each request, so a test sees which client sent it.
+fn marked_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .default_headers(reqwest::header::HeaderMap::from_iter([(
+            reqwest::header::HeaderName::from_static("x-test-transport"),
+            reqwest::header::HeaderValue::from_static("caller"),
+        )]))
+        .build()
+        .unwrap()
+}
+
+fn injected(pairs: &[(&str, &str)]) -> GoogleAuth {
+    GoogleAuth::new(GoogleAuthOptions {
+        env: Environment::new(pairs.iter().map(|(key, value)| (*key, *value))),
+        http_client: Some(marked_client()),
+    })
+}
+
+/// The credential file and quota project come from the injected environment,
+/// and the token request goes out on the injected client.
+#[tokio::test]
+async fn an_injected_environment_and_client_are_what_google_auth_uses() {
+    let server = MockServer::start().await;
+    mount_token(&server, "/token", "injected-token", 1).await;
+    let file = credentials_path("an_injected_environment_and_client_are_what_google_auth_uses");
+    std::fs::write(
+        &file,
+        serde_json::json!({
+            "type": "authorized_user",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "refresh_token": "refresh-token",
+            "quota_project_id": "file-quota",
+            "token_uri": format!("{}/token", server.uri()),
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let auth = injected(&[
+        ("GOOGLE_APPLICATION_CREDENTIALS", &file),
+        ("GOOGLE_CLOUD_QUOTA_PROJECT", "env-quota"),
+    ]);
+
+    let headers = auth.request_headers().await.unwrap();
+    assert_eq!(headers["authorization"], "Bearer injected-token");
+    assert_eq!(headers["x-goog-user-project"], "env-quota");
+    let token = &requests_to(&server, "/token").await[0];
+    assert_eq!(token.headers.get("x-test-transport").unwrap(), "caller");
+    let _ = std::fs::remove_file(file);
+}
+
+/// gcloud's well-known file is looked up under the injected `HOME`.
+#[cfg(not(windows))]
+#[tokio::test]
+async fn the_well_known_file_is_found_under_the_injected_home() {
+    let server = MockServer::start().await;
+    mount_token(&server, "/token", "well-known-token", 1).await;
+    let home =
+        std::env::temp_dir().join(format!("anthropic-sdk-vertex-home-{}", std::process::id()));
+    let gcloud = home.join(".config").join("gcloud");
+    std::fs::create_dir_all(&gcloud).unwrap();
+    std::fs::write(
+        gcloud.join("application_default_credentials.json"),
+        serde_json::json!({
+            "type": "authorized_user",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "refresh_token": "refresh-token",
+            "token_uri": format!("{}/token", server.uri()),
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let auth = injected(&[("HOME", &home.display().to_string())]);
+
+    assert_eq!(auth.get_token().await.unwrap(), "well-known-token");
+    let _ = std::fs::remove_dir_all(home);
+}
+
+async fn mount_metadata_token(server: &MockServer, token: &str) {
+    Mock::given(method("GET"))
+        .and(path(
+            "/computeMetadata/v1/instance/service-accounts/default/token",
+        ))
+        .and(header("metadata-flavor", "Google"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "access_token": token, "expires_in": 3600 })),
+        )
+        .mount(server)
+        .await;
+}
+
+/// The metadata server's address and the detection mode come from the
+/// injected environment.
+#[tokio::test]
+async fn metadata_settings_come_from_the_injected_environment() {
+    let server = MockServer::start().await;
+    mount_metadata_token(&server, "mds-token").await;
+    let auth = injected(&[
+        ("GCE_METADATA_HOST", &server.address().to_string()),
+        ("METADATA_SERVER_DETECTION", "assume-present"),
+    ]);
+
+    assert_eq!(auth.get_token().await.unwrap(), "mds-token");
+    let token = &server.received_requests().await.unwrap()[0];
+    assert_eq!(token.headers.get("x-test-transport").unwrap(), "caller");
+}
+
+/// Node `_checkIsGCE` is `getGCPResidency() || isAvailable()`: a serverless
+/// variable decides before `METADATA_SERVER_DETECTION` is read, even `none`.
+#[tokio::test]
+async fn gcp_residency_decides_before_the_detection_mode() {
+    let server = MockServer::start().await;
+    mount_metadata_token(&server, "cloud-run-token").await;
+    let auth = injected(&[
+        ("GCE_METADATA_HOST", &server.address().to_string()),
+        ("K_SERVICE", "service"),
+        ("METADATA_SERVER_DETECTION", "none"),
+    ]);
+
+    assert_eq!(auth.get_token().await.unwrap(), "cloud-run-token");
+}
+
+/// gcp-metadata tests the variable's truthiness, then trims it: spaces are
+/// an unknown mode, not an unset one.
+#[tokio::test]
+async fn a_detection_mode_of_spaces_is_unknown() {
+    let error = injected(&[("METADATA_SERVER_DETECTION", "  ")])
+        .get_token()
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Unknown `METADATA_SERVER_DETECTION` env variable. Got ``"),
+        "{error}"
+    );
+}
+
+/// The environment prints as a count: the other variables a host passes
+/// along (here a token of another service) stay out of logs.
+#[test]
+fn debug_output_shows_no_variable() {
+    let options = GoogleAuthOptions {
+        env: Environment::new([("OTHER_SERVICE_TOKEN", "secret-in-env")]),
+        http_client: None,
+    };
+    let auth = GoogleAuth::new(options.clone());
+    for printed in [format!("{options:?}"), format!("{auth:?}")] {
+        assert!(!printed.contains("secret-in-env"), "{printed}");
+        assert!(!printed.contains("OTHER_SERVICE_TOKEN"), "{printed}");
+    }
 }

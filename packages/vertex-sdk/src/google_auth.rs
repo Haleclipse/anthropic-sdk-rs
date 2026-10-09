@@ -23,15 +23,18 @@
 // - executable- and AWS-sourced external accounts
 // - `external_account_authorized_user`
 //
-// Environment variables are read through `read_env`, when the client is built.
+// The npm package reads the Node process's `process.env`; this port reads the
+// `Environment` the caller passes (`GoogleAuthOptions::env`), and sends with
+// the caller's client when it passes one. `GoogleAuth::default()` passes the
+// process's own environment and a default client.
 
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anthropic_sdk::core::error::ApiError;
-use anthropic_sdk::internal::env::read_env;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -49,6 +52,118 @@ const METADATA_PING_TIMEOUT: Duration = Duration::from_secs(3);
 /// Node `GoogleAuthExceptionMessages.NO_ADC_FOUND`.
 pub const NO_ADC_FOUND: &str = "Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.";
 
+/// The `process.env` [`GoogleAuth`] reads, passed in by the caller. The npm
+/// packages (google-auth-library, gcp-metadata) read the Node process's
+/// environment object directly; this port reads nothing from the process
+/// itself, so an application whose environment differs from the OS one (it
+/// applies settings after startup) hands over its own.
+///
+/// When a key repeats, the first entry wins, as `getenv` does. Keys compare
+/// exactly, except on Windows, where they compare ignoring ASCII case.
+///
+/// Its `Debug` shows only how many variables it holds: an environment carries
+/// secrets of every kind.
+#[derive(Clone, Default)]
+pub struct Environment {
+    variables: Arc<[(OsString, OsString)]>,
+}
+
+impl std::fmt::Debug for Environment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Environment")
+            .field("variables", &self.variables.len())
+            .finish()
+    }
+}
+
+impl Environment {
+    pub fn new<I, K, V>(variables: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<OsString>,
+        V: Into<OsString>,
+    {
+        let mut unique: Vec<(OsString, OsString)> = Vec::new();
+        for (key, value) in variables {
+            let key = key.into();
+            if !unique
+                .iter()
+                .any(|(existing, _)| keys_equal(existing, &key))
+            {
+                unique.push((key, value.into()));
+            }
+        }
+        Self {
+            variables: unique.into(),
+        }
+    }
+
+    /// The process's own environment, as `process.env` is for the npm
+    /// packages.
+    pub fn from_process() -> Self {
+        Self::new(anthropic_sdk::internal::env::process_env())
+    }
+
+    pub fn var_os(&self, key: impl AsRef<OsStr>) -> Option<&OsStr> {
+        let key = key.as_ref();
+        self.variables
+            .iter()
+            .find(|(candidate, _)| keys_equal(candidate, key))
+            .map(|(_, value)| value.as_os_str())
+    }
+
+    /// The value as UTF-8; a value that is not is treated as unset.
+    pub fn var(&self, key: impl AsRef<OsStr>) -> Option<&str> {
+        self.var_os(key).and_then(OsStr::to_str)
+    }
+
+    /// `process.env[key]` where JS tests its truthiness: unset and `""` are
+    /// both absent.
+    fn truthy(&self, key: impl AsRef<OsStr>) -> Option<&str> {
+        self.var(key).filter(|value| !value.is_empty())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&OsStr, &OsStr)> {
+        self.variables
+            .iter()
+            .map(|(key, value)| (key.as_os_str(), value.as_os_str()))
+    }
+}
+
+fn keys_equal(left: &OsStr, right: &OsStr) -> bool {
+    if cfg!(windows) {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+/// What [`GoogleAuth::new`] reads, besides what Node's `GoogleAuthOptions`
+/// carries (the scope is always `cloud-platform`, as the TS Vertex SDK and CC
+/// ask for).
+#[derive(Clone, Default)]
+pub struct GoogleAuthOptions {
+    /// The environment the credential search, the metadata server settings
+    /// and the quota project come from.
+    pub env: Environment,
+    /// The client the token, STS, IAM and metadata requests send with;
+    /// `None` uses a default `reqwest::Client`, whose proxy comes from the OS
+    /// environment by reqwest's rules, not gaxios'.
+    pub http_client: Option<reqwest::Client>,
+}
+
+impl std::fmt::Debug for GoogleAuthOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleAuthOptions")
+            .field("env", &self.env)
+            .field(
+                "http_client",
+                &self.http_client.as_ref().map(|_| "<reqwest::Client>"),
+            )
+            .finish()
+    }
+}
+
 /// Application Default Credentials: the [`TokenProvider`] a Vertex client uses
 /// when given neither `access_token` nor `token_provider`.
 ///
@@ -58,6 +173,7 @@ pub const NO_ADC_FOUND: &str = "Could not load the default credentials. Browse t
 /// `x-goog-user-project` for the quota project (`GOOGLE_CLOUD_QUOTA_PROJECT`,
 /// else the file's `quota_project_id`), as Node's `getRequestHeaders()` does.
 pub struct GoogleAuth {
+    env: Environment,
     source: Result<Source, String>,
     project_id: Option<String>,
     quota_project_id: Option<String>,
@@ -71,6 +187,7 @@ pub struct GoogleAuth {
 impl std::fmt::Debug for GoogleAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GoogleAuth")
+            .field("env", &self.env)
             .field("source", &self.source.as_ref().map(Source::kind))
             .field("project_id", &self.project_id)
             .field("quota_project_id", &self.quota_project_id)
@@ -142,28 +259,37 @@ enum SubjectFormat {
 }
 
 impl GoogleAuth {
-    /// Find the default credentials, reading the environment and the
-    /// credential file now. A missing or unreadable file is reported on the
-    /// first request, as Node reports it from `getClient()`.
-    pub fn new() -> Self {
-        let loaded = load_credentials_file();
+    /// Find the default credentials, reading `options.env` and the credential
+    /// file now. A missing or unreadable file is reported on the first
+    /// request, as Node reports it from `getClient()`.
+    pub fn new(options: GoogleAuthOptions) -> Self {
+        let GoogleAuthOptions { env, http_client } = options;
+        let loaded = load_credentials_file(&env);
         let (source, file_project_id, file_quota_project_id) = match loaded {
             Ok(Some((source, project_id, quota))) => (Ok(source), project_id, quota),
             Ok(None) => (Ok(Source::Metadata), None, None),
             Err(error) => (Err(error), None, None),
         };
-        let quota_project_id = read_env("GOOGLE_CLOUD_QUOTA_PROJECT")
-            .filter(|value| !value.is_empty())
+        // `#prepareAndCacheClient`'s `process.env['GOOGLE_CLOUD_QUOTA_PROJECT']
+        // || null`, over the file's own.
+        let quota_project_id = env
+            .truthy("GOOGLE_CLOUD_QUOTA_PROJECT")
+            .map(str::to_owned)
             .or(file_quota_project_id);
         // TS Vertex: `authClient.projectId ?? authHeaders['x-goog-user-project']`.
         let project_id = file_project_id.or_else(|| quota_project_id.clone());
+        let http = OnceLock::new();
+        if let Some(client) = http_client {
+            let _ = http.set(client);
+        }
         Self {
+            metadata_base: metadata_base_url(&env),
+            env,
             source,
             project_id,
             quota_project_id,
-            metadata_base: metadata_base_url(),
             on_gce: tokio::sync::OnceCell::new(),
-            http: OnceLock::new(),
+            http,
             cached: tokio::sync::Mutex::new(None),
         }
     }
@@ -399,24 +525,29 @@ impl GoogleAuth {
         oauth_token(&json, &url)
     }
 
-    /// gcp-metadata `isAvailable()`, preceded by `getGCPResidency()`.
+    /// Node `GoogleAuth._checkIsGCE`: `getGCPResidency() || await
+    /// isAvailable()`, so residency decides before the detection mode is
+    /// read.
     async fn metadata_available(&self) -> Result<bool, String> {
-        let detection = read_env("METADATA_SERVER_DETECTION")
-            .map(|value| value.trim().to_lowercase())
-            .filter(|value| !value.is_empty());
+        if gcp_residency(&self.env) {
+            return Ok(true);
+        }
+        // gcp-metadata `isAvailable()`: `if (process.env.METADATA_SERVER_DETECTION)`,
+        // then `.trim()`, so a value of spaces is an unknown mode.
+        let detection = self
+            .env
+            .truthy("METADATA_SERVER_DETECTION")
+            .map(|value| value.trim().to_lowercase());
         match detection.as_deref() {
             Some("assume-present") => return Ok(true),
             Some("none") => return Ok(false),
-            Some("bios-only") => return Ok(gcp_residency()),
+            Some("bios-only") => return Ok(gcp_residency(&self.env)),
             Some("ping-only") | None => {}
             Some(other) => {
                 return Err(format!(
                     "Unknown `METADATA_SERVER_DETECTION` env variable. Got `{other}`, but it should be `assume-present`, `none`, `bios-only`, `ping-only`, or unset"
                 ))
             }
-        }
-        if detection.is_none() && gcp_residency() {
-            return Ok(true);
         }
         let response = self
             .http()
@@ -436,8 +567,13 @@ impl GoogleAuth {
 }
 
 impl Default for GoogleAuth {
+    /// The process's own environment and a default client, as the npm
+    /// package reads `process.env`.
     fn default() -> Self {
-        Self::new()
+        Self::new(GoogleAuthOptions {
+            env: Environment::from_process(),
+            http_client: None,
+        })
     }
 }
 
@@ -470,28 +606,28 @@ impl TokenProvider for GoogleAuth {
 
 type LoadedFile = (Source, Option<String>, Option<String>);
 
-fn load_credentials_file() -> Result<Option<LoadedFile>, String> {
-    let from_env = read_env("GOOGLE_APPLICATION_CREDENTIALS")
-        .or_else(|| read_env("google_application_credentials"))
-        .filter(|path| !path.is_empty());
+fn load_credentials_file(env: &Environment) -> Result<Option<LoadedFile>, String> {
+    let from_env = env
+        .truthy("GOOGLE_APPLICATION_CREDENTIALS")
+        .or_else(|| env.truthy("google_application_credentials"));
     if let Some(path) = from_env {
-        return read_credentials_file(&path).map(Some).map_err(|error| {
+        return read_credentials_file(path).map(Some).map_err(|error| {
             format!(
                 "Unable to read the credential file specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable: {error}"
             )
         });
     }
-    let Some(path) = well_known_file().filter(|path| path.exists()) else {
+    let Some(path) = well_known_file(env).filter(|path| path.exists()) else {
         return Ok(None);
     };
     read_credentials_file(&path.to_string_lossy()).map(Some)
 }
 
-fn well_known_file() -> Option<PathBuf> {
+fn well_known_file(env: &Environment) -> Option<PathBuf> {
     let base = if cfg!(windows) {
-        PathBuf::from(read_env("APPDATA").filter(|value| !value.is_empty())?)
+        PathBuf::from(env.truthy("APPDATA")?)
     } else {
-        PathBuf::from(read_env("HOME").filter(|value| !value.is_empty())?).join(".config")
+        PathBuf::from(env.truthy("HOME")?).join(".config")
     };
     Some(
         base.join("gcloud")
@@ -700,13 +836,13 @@ fn sign_rs256(_private_key_pem: &str, _message: &[u8]) -> Result<Vec<u8>, String
 
 /// gcp-metadata `getBaseUrl()`: `GCE_METADATA_IP`, else `GCE_METADATA_HOST`,
 /// else `169.254.169.254`, over plain HTTP unless a scheme is given.
-fn metadata_base_url() -> String {
-    let host = read_env("GCE_METADATA_IP")
-        .or_else(|| read_env("GCE_METADATA_HOST"))
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "169.254.169.254".to_owned());
+fn metadata_base_url(env: &Environment) -> String {
+    let host = env
+        .truthy("GCE_METADATA_IP")
+        .or_else(|| env.truthy("GCE_METADATA_HOST"))
+        .unwrap_or("169.254.169.254");
     let host = if host.starts_with("http://") || host.starts_with("https://") {
-        host
+        host.to_owned()
     } else {
         format!("http://{host}")
     };
@@ -715,10 +851,10 @@ fn metadata_base_url() -> String {
 
 /// gcp-metadata `getGCPResidency()`: serverless environment variables or a
 /// Google BIOS on Linux. (The MAC-address check is not ported.)
-fn gcp_residency() -> bool {
+fn gcp_residency(env: &Environment) -> bool {
     let serverless = ["CLOUD_RUN_JOB", "FUNCTION_NAME", "K_SERVICE"]
         .iter()
-        .any(|name| read_env(name).is_some_and(|value| !value.is_empty()));
+        .any(|name| env.truthy(name).is_some());
     serverless
         || (cfg!(target_os = "linux")
             && std::fs::metadata("/sys/class/dmi/id/bios_date").is_ok()

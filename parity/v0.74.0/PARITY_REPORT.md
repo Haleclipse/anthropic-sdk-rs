@@ -3,6 +3,15 @@
 Date: 2026-07-15
 Reference: `anthropic-sdk-typescript` v0.74.0 (`5ccd74353d14ed78b8085748700602827f9b993c`)
 
+## Vertex's `GoogleAuth` takes the caller's environment and client (2026-10-09)
+
+- google-auth-library and gcp-metadata read `process.env` and send through gaxios. The Rust `GoogleAuth` read the process environment through `read_env` and sent with a `reqwest::Client::new()` of its own, so an application whose environment or transport differs from the OS defaults (settings applied after startup, a proxy or CA of its own) could not hand them over.
+- **Inputs:** `GoogleAuth::new(GoogleAuthOptions { env: Environment, http_client })`, as the Bedrock and Foundry ports take theirs. Every variable it reads comes from `env`: `GOOGLE_APPLICATION_CREDENTIALS`, `HOME`/`APPDATA`, `GOOGLE_CLOUD_QUOTA_PROJECT`, `GCE_METADATA_IP`/`GCE_METADATA_HOST`, `METADATA_SERVER_DETECTION`, `CLOUD_RUN_JOB`/`FUNCTION_NAME`/`K_SERVICE`. Values are read as npm reads them, untrimmed, an empty one unset; `METADATA_SERVER_DETECTION` is trimmed after that test, so spaces are an unknown mode. The token, STS, IAM and metadata requests send with `http_client`, or a default `reqwest::Client`. `Environment` prints only its variable count.
+- **Default:** `GoogleAuth::default()` passes the process environment (`internal::env::process_env`) and no client; the Vertex client uses it when given neither `access_token` nor `token_provider`, as before.
+- **Fix on the way:** the metadata check is Node's `_checkIsGCE`, `getGCPResidency() || isAvailable()`: a serverless variable or a Google BIOS decides before `METADATA_SERVER_DETECTION` is read. The port read the detection mode first, so `none` (or an unknown value) on Cloud Run turned the metadata server off.
+- **Breaking:** `GoogleAuth::new()` takes `GoogleAuthOptions`; `GoogleAuth::default()` is the old `new()`.
+- Verification: fmt, strict Clippy, `cargo test --workspace --all-targets`: 768 passed, 6 new tests (the injected credential file, quota project and client; the well-known file under an injected `HOME`; the metadata settings; residency before the detection mode; a detection mode of spaces; `Debug` redaction), run in the test process with no child environment.
+
 ## Bedrock signs the request path as the TS signer escapes it (2026-10-08)
 
 - TS signs with `@smithy/signature-v4` (`core/auth.ts`), whose `uriEscapePath` is on by default: `getCanonicalPath` drops the path's empty and `.` segments, resolves `..`, and escapes the already encoded path once more, keeping `/`. So `:` is signed as `%3A` and an escape such as `%2F` as `%252F`, as AWS computes it for every service but S3. The Rust signer signed the path as sent, which gave a signature AWS does not compute for any model ID with a `:` (every versioned Bedrock ID, such as `…-v2:0`) or an encoded `/` (inference profile ARNs). `canonical_uri` now follows `getCanonicalPath`.

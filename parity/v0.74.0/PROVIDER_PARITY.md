@@ -74,6 +74,7 @@ These are tracked language/runtime adaptations rather than unreviewed implementa
   - authorized user, service account, impersonated service account, and external account with a file or URL source;
   - the metadata server.
   Other types (executable- or AWS-sourced external accounts, `external_account_authorized_user`) fail with an error. Applications can supply a `TokenProvider` instead.
+  It reads the environment and sends with the client the caller passes (`GoogleAuthOptions { env, http_client }`); `GoogleAuth::default()`, the client's default, reads the process environment, as npm reads `process.env`.
 - Bedrock uses a native Rust SigV4 implementation and a port of the TS SDK's default credential chain (`credential_providers`). Its canonical request can be semantically valid without producing byte-identical headers to the JavaScript Smithy signer.
 - Bedrock builds the default chain once per client, and the chain memoizes its credentials as npm's `memoizeChain` does. TS rebuilds the chain on every request. See PARITY_REPORT § Bedrock's default credential chain is a port of the TS one.
 - `reqwest` streams replace Fetch/ReadableStream/AbortController runtime objects.

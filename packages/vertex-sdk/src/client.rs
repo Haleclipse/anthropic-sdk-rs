@@ -214,12 +214,15 @@ fn vertex_missing_project_id_error() -> ApiError {
 
 /// The given token provider, else Application Default Credentials unless a
 /// static `access_token` is set. TS defaults `googleAuth` to
-/// `new GoogleAuth({ scopes })` (`client.ts:106-111`).
+/// `new GoogleAuth({ scopes })` (`client.ts:106-111`), which reads
+/// `process.env`; the default here reads the process environment too. An
+/// application with an environment or transport of its own passes a
+/// [`GoogleAuth::new`](crate::GoogleAuth::new) as `token_provider`.
 fn effective_token_provider(config: &VertexConfig) -> Option<Arc<dyn TokenProvider>> {
     match (&config.token_provider, &config.access_token) {
         (Some(provider), _) => Some(Arc::clone(provider)),
         (None, Some(_)) => None,
-        (None, None) => Some(Arc::new(crate::GoogleAuth::new())),
+        (None, None) => Some(Arc::new(crate::GoogleAuth::default())),
     }
 }
 
